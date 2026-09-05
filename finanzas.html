@@ -383,6 +383,11 @@ body.public .admin-only { display: none !important; }
         <b id="prevProdTotal" style="font-size:1.1rem;">Total: $0,00</b>
       </div>
     </div>
+    <div class="form-group" id="prevTotalGroup">
+      <label>Total a pagar</label>
+      <input type="text" id="editPrevTotal" placeholder="0,00" inputmode="decimal" oninput="onPrevPayChange()" onfocus="editFocus(this)" onblur="formatFieldOnBlur(this);onPrevPayChange()">
+      <div class="form-hint">Se llena solo al añadir productos. Puedes escribir otro total a mano si el pedido es distinto.</div>
+    </div>
     <div class="form-group" id="prevPayGroup">
       <label>El cliente pagó...</label>
       <select id="editPrevPay" onchange="onPrevPayChange()">
@@ -552,7 +557,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v4';
+const BUILD_VERSION = '2026-09-05-preventas-v5';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
