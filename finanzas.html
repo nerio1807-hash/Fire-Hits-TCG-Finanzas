@@ -1202,6 +1202,7 @@ function saveLot() {
     items.push({ id, name: n, cost: co, costText: (row.querySelector('.li-cost').value || '').trim(), units: un });
   });
   if (!items.length) { showToast('Agrega al menos un producto al lote', true); return; }
+  const dupes = [...new Set(items.map(i => i.name))].filter(n => items.filter(i => i.name === n).length > 1);
   const id = document.getElementById('editLotId').value;
   if (id) {
     const idx = lots.findIndex(l => l.id === Number(id));
@@ -1212,7 +1213,8 @@ function saveLot() {
   saveLots();
   render();
   closeLotModal();
-  showToast(id ? 'Lote actualizado' : 'Lote agregado');
+  const dupMsg = dupes.length ? ' · OJO: ' + dupes.join(', ') + ' repetido(s)' : '';
+  showToast((id ? 'Lote actualizado' : 'Lote agregado') + ': ' + items.length + ' producto(s)' + dupMsg, dupes.length > 0);
 }
 
 function deleteLotItem(lotId, itemId) {
