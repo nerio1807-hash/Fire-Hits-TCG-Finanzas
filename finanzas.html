@@ -417,6 +417,8 @@ let lotItemsDraft = [];
 const OWNER_EMAIL = 'nerio1807@gmail.com';
 let currentUser = null;
 let authObserverAttached = false;
+let cloudWatcher = null;
+let watchStarted = false;
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -1561,6 +1563,24 @@ function downloadCloud() {
     });
 }
 
+function watchCloud() {
+  if (watchStarted || !initFirebase() || !cloudDoc) return;
+  watchStarted = true;
+  cloudWatcher = cloudDoc.onSnapshot(function(snap) {
+    if (!snap || !snap.exists) return;
+    const d = snap.data();
+    if (Array.isArray(d.transactions)) transactions = d.transactions;
+    if (Array.isArray(d.lots)) lots = normalizeLots(d.lots);
+    if (d.catalog) catalog = normalizeCatalog(d.catalog);
+    saveTx();
+    saveLots();
+    saveCatalog();
+    render();
+  }, function(err) {
+    if (err && err.code === 'permission-denied') showToast('No tienes permiso para leer los datos', true);
+  });
+}
+
 function scheduleCloud() {
   if (!cloud || cloud.auto !== true) return;
   clearTimeout(cloudTimer);
@@ -1630,15 +1650,17 @@ function attachAuthObserver() {
       const isOwner = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
       document.body.classList.toggle('public', !isOwner);
       document.getElementById('adminOverlay').classList.remove('active');
-      startApp();
-      if (!isOwner) {
-        showToast('Bienvenido (vista de solo lectura)');
-        if (initFirebase()) downloadCloud();
-      } else if (!transactions.length && !lots.length && cloud) {
-        if (initFirebase()) downloadCloud();
+      if (isOwner) {
+        if (!cloud || !cloud.config) cloud = { config: FALLBACK_CONFIG, auto: true };
+        cloud.auto = true;
+        localStorage.setItem(STORE_CLOUD, JSON.stringify({ config: cloud.config, auto: true }));
       }
+      startApp();
+      if (!isOwner) showToast('Bienvenido (vista de solo lectura)');
+      watchCloud();
     } else {
       document.body.classList.remove('public');
+      if (cloudWatcher) { cloudWatcher(); cloudWatcher = null; watchStarted = false; }
       document.getElementById('adminOverlay').classList.add('active');
     }
   });
