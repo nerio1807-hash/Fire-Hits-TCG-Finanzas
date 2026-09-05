@@ -405,6 +405,7 @@ const STORE_TX = 'firehits_finanzas';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
+const STORE_OPEN = 'firehits_finanzas_open';
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const INCOME_CATS = ['Venta', 'Venta Online', 'Seña / Apartado', 'Préstamo', 'Otro'];
 const EXPENSE_CATS = ['Inventario', 'Compras', 'Envío', 'Publicidad', 'Transporte', 'Comida', 'Herramientas', 'Otro'];
@@ -429,6 +430,7 @@ let authObserverAttached = false;
 let cloudWatcher = null;
 let watchStarted = false;
 let pendingGastoLotTxId = null;
+let openBalance = 0;
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -525,6 +527,31 @@ function loadTx() {
 function saveTx() {
   localStorage.setItem(STORE_TX, JSON.stringify(transactions));
   scheduleCloud();
+}
+
+function loadOpen() {
+  const stored = localStorage.getItem(STORE_OPEN);
+  if (stored != null) {
+    try { openBalance = Number(JSON.parse(stored)) || 0; }
+    catch(e) { openBalance = 0; }
+  }
+}
+
+function saveOpen() {
+  localStorage.setItem(STORE_OPEN, JSON.stringify(openBalance));
+  scheduleCloud();
+}
+
+function setOpenBalance() {
+  const cur = openBalance > 0 ? formatEditValue(openBalance) : '';
+  const v = prompt('¿Cuánto dinero tenías en caja ANTES de usar la app? (ventas anteriores que no vas a registrar)', cur);
+  if (v === null) return;
+  const n = parseAmount(v);
+  if (isNaN(n)) { showToast('Escribe un monto válido', true); return; }
+  openBalance = Math.max(0, n);
+  saveOpen();
+  render();
+  showToast(openBalance > 0 ? 'Saldo inicial: ' + formatMoney(openBalance) : 'Saldo inicial quitado');
 }
 
 function getNextId(arr) {
@@ -627,7 +654,7 @@ function renderStats() {
   const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const monthIn = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
   const monthOut = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
-  const cash = totalIn - totalOut;
+  const cash = openBalance + (totalIn - totalOut);
   const invValue = invValue0;
   const projInv = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => {
       const un = Number(i.units) || 0;
@@ -640,7 +667,7 @@ function renderStats() {
   const currentTotal = cash + invValue;
   const projected = cash + projInv;
   document.getElementById('cashBanner').innerHTML = `
-    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">Ingresos ${formatMoney(totalIn)} − Gastos ${formatMoney(totalOut)}</div></div>
+    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">Saldo inicial ${formatMoney(openBalance)} + Movimientos ${formatMoney(totalIn - totalOut)}</div>${currentUser && currentUser.email && String(currentUser.email).toLowerCase() === OWNER_EMAIL.toLowerCase() ? '<button class="btn btn-secondary btn-sm admin-only" style="padding:0.15rem 0.5rem; font-size:0.7rem; margin-top:0.4rem;" onclick="setOpenBalance()">Poner saldo inicial</button>' : ''}</div>
     <div class="stat-card"><h3>📦 Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que pagaste por los productos sin vender</div></div>
     <div class="stat-card"><h3>💼 Total actual del negocio</h3><p class="big ${currentTotal >= 0 ? 'c-green' : 'c-red'}">${formatMoney(currentTotal)}</p><div class="sub">Caja + costo del inventario</div></div>
     <div class="stat-card"><h3>🎯 Proyección al vender todo</h3><p class="big ${projected >= 0 ? 'c-green' : 'c-red'}">${formatMoney(projected)}</p><div class="sub">Caja + precio de venta de tu inventario</div></div>
@@ -1669,6 +1696,7 @@ function uploadCloud(force) {
     transactions,
     lots,
     catalog,
+    openBalance,
     updatedAt: new Date().toISOString()
   };
   cloudDoc.set(payload)
@@ -1694,6 +1722,7 @@ function downloadCloud() {
       if (Array.isArray(d.transactions)) transactions = d.transactions;
       if (Array.isArray(d.lots)) lots = normalizeLots(d.lots);
       if (d.catalog) catalog = normalizeCatalog(d.catalog);
+      if (typeof d.openBalance === 'number') openBalance = d.openBalance;
       saveTx();
       saveLots();
       saveCatalog();
@@ -1715,6 +1744,7 @@ function watchCloud() {
     if (Array.isArray(d.transactions)) transactions = d.transactions;
     if (Array.isArray(d.lots)) lots = normalizeLots(d.lots);
     if (d.catalog) catalog = normalizeCatalog(d.catalog);
+    if (typeof d.openBalance === 'number') openBalance = d.openBalance;
     saveTx();
     saveLots();
     saveCatalog();
@@ -1832,6 +1862,7 @@ function startApp() {
   loadTx();
   loadLots();
   loadCatalog();
+  loadOpen();
   syncCatalogFromLots();
   loadCloud();
   render();
