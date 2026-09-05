@@ -580,7 +580,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v11';
+const BUILD_VERSION = '2026-09-05-preventas-v12';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -787,10 +787,13 @@ function getNextId(arr) {
   return arr.length ? Math.max(...arr.map(t => t.id)) + 1 : 1;
 }
 
+var __nextItemCounter = 0;
 function nextItemId() {
-  let m = 0;
+  let m = __nextItemCounter;
   lots.forEach(l => (l.items || []).forEach(i => { const n = Number(i.id); if (n > m) m = n; }));
-  return m + 1;
+  if (lotItemsDraft) lotItemsDraft.forEach(i => { const n = Number(i.id); if (n > m) m = n; });
+  __nextItemCounter = m + 1;
+  return __nextItemCounter;
 }
 
 function todayStr() {
