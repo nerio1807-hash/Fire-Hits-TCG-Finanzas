@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Fire Hits TCG - Finanzas e Inventario</title>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #e63946; }
+header h1 { font-size: 1.5rem; color: #fff; }
+header h1 span { color: #e63946; }
+.actions { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+.btn { padding: 0.5rem 1rem; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.875rem; transition: all 0.2s; }
+.btn-primary { background: #e63946; color: #fff; }
+.btn-primary:hover { background: #c1121f; }
+.btn-secondary { background: #2a2a4a; color: #e0e0e0; }
+.btn-secondary:hover { background: #3a3a5a; }
+.btn-success { background: #2d6a4f; color: #fff; }
+.btn-success:hover { background: #1b4332; }
+.btn-danger { background: #9b2226; color: #fff; }
+.btn-danger:hover { background: #6a040f; }
+.btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
+.container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+.note { font-size: 0.8rem; color: #888; margin-bottom: 1rem; }
+.tabs { display: flex; gap: 0.5rem; padding: 0 2rem; background: #0f0f1a; border-bottom: 1px solid #24243f; }
+.tab { padding: 0.75rem 1.25rem; background: transparent; border: none; border-bottom: 3px solid transparent; color: #888; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
+.tab:hover { color: #ddd; }
+.tab.active { color: #e63946; border-bottom-color: #e63946; }
+.page { display: none; }
+.page.active { display: block; }
+.stats { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.stat-card { background: #1a1a2e; padding: 1rem 1.5rem; border-radius: 12px; border: 1px solid #2a2a4a; flex: 1; min-width: 150px; }
+.stat-card h3 { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-card p { font-size: 1.4rem; font-weight: 700; margin-top: 0.25rem; }
+.c-green { color: #95d5b2 !important; }
+.c-red { color: #e63946 !important; }
+.c-white { color: #fff !important; }
+.filters { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+.filters label { font-size: 0.8rem; color: #888; }
+.filters select, .filters input { padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid #333; background: #1a1a2e; color: #e0e0e0; font-size: 0.875rem; }
+.filters select:focus, .filters input:focus { outline: none; border-color: #e63946; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.panel { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 16px; padding: 1.25rem; }
+.panel.full { grid-column: 1 / -1; }
+.panel h2 { font-size: 1rem; margin-bottom: 0.75rem; color: #fff; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+.tablewrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th { text-align: left; color: #888; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem; border-bottom: 1px solid #2a2a4a; position: sticky; top: 0; background: #1a1a2e; }
+td { padding: 0.5rem; border-bottom: 1px solid #16162a; white-space: nowrap; }
+tr:hover td { background: #1c1c30; }
+.badge { padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
+.badge-ingreso { background: #1b4332; color: #95d5b2; }
+.badge-gasto { background: #6a040f; color: #ff8a8a; }
+.badge-lote { background: #2a2a4a; color: #a8a8d0; }
+.badge-agotado { background: #3a3a5a; color: #bbb; }
+.amount-in { color: #95d5b2; font-weight: 700; }
+.amount-out { color: #e63946; font-weight: 700; }
+.td-actions { display: flex; gap: 0.4rem; }
+.empty-state { text-align: center; padding: 2.5rem 1rem; color: #555; }
+.empty-state h3 { font-size: 1.2rem; margin-bottom: 0.3rem; }
+.legend { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.75rem; font-size: 0.8rem; }
+.legend-row { display: flex; align-items: center; gap: 0.5rem; justify-content: space-between; }
+.legend-label { display: flex; align-items: center; gap: 0.5rem; color: #aaa; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend-val { color: #fff; font-weight: 600; }
+.lot-group { background: #16162a; border: 1px solid #2a2a4a; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+.lot-group-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.lot-group-head h3 { color: #fff; font-size: 1rem; }
+.lot-group-head .sub { color: #888; font-size: 0.8rem; }
+.lot-group-actions { display: flex; gap: 0.5rem; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; padding: 1rem; }
+.modal-overlay.active { display: flex; }
+.modal { background: #1a1a2e; border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 2rem; border: 1px solid #2a2a4a; }
+.modal h2 { margin-bottom: 1.5rem; color: #fff; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 0.3rem; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 0.6rem 0.75rem; border-radius: 8px; border: 1px solid #333; background: #0f0f1a; color: #e0e0e0; font-size: 0.9rem; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #e63946; }
+.form-hint { font-size: 0.75rem; color: #888; margin-top: 0.3rem; }
+.items-label { font-size: 0.8rem; color: #888; margin: 1rem 0 0.4rem; display: block; }
+.lot-item-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; }
+.lot-item-row input { flex: 1; min-width: 0; padding: 0.55rem 0.7rem; border-radius: 8px; border: 1px solid #333; background: #0f0f1a; color: #e0e0e0; font-size: 0.85rem; }
+.lot-item-row input:focus { outline: none; border-color: #e63946; }
+.lot-remove { flex: 0 0 auto; }
+.add-item-btn { margin-top: 0.25rem; }
+.form-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+.form-actions .btn-danger { margin-right: auto; }
+.toast { position: fixed; bottom: 2rem; right: 2rem; background: #2d6a4f; color: #fff; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 600; z-index: 2000; opacity: 0; transform: translateY(20px); transition: all 0.3s; }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.error { background: #9b2226; }
+canvas { width: 100%; height: 220px; }
+#suggestHint { color: #95d5b2; margin-bottom: 0.4rem; }
+#gainHint { margin-top: 0.4rem; }
+body.public .admin-only { display: none !important; }
+body.public #adminOverlay { display: none !important; }
+body:not(.public) #publicOverlay { display: none !important; }
+#publicOverlay .modal { padding: 2rem; max-width: 360px; }
+#adminOverlay .modal { padding: 2rem; max-width: 360px; }
+.print-only { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  #printReport, #printReport * { visibility: visible; }
+  #printReport { display: block !important; position: absolute; left: 0; top: 0; width: 100%; background: #fff; color: #000; padding: 20px; }
+  #printReport h1 { font-size: 18px; margin-bottom: 6px; color: #000; }
+  #printReport .meta { color: #333; margin-bottom: 14px; }
+  #printReport h3 { font-size: 14px; margin: 14px 0 6px; color: #000; }
+  #printReport table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #printReport th, #printReport td { border: 1px solid #999; padding: 4px 6px; text-align: left; color: #000; }
+  #printReport th { background: #eee; }
+  #printReport .right { text-align: right; }
+  #printReport .tot { font-weight: 700; background: #f5f5f5; }
+  #printReport .pos { color: #1b7a3d; font-weight: 600; }
+  #printReport .neg { color: #c1121f; font-weight: 600; }
+}
+@media (max-width: 760px) {
+  header { flex-direction: column; align-items: stretch; text-align: center; }
+  .tabs { padding: 0 1rem; }
+  .grid2 { grid-template-columns: 1fr; }
+  .modal { padding: 1.5rem; }
+  .lot-item-row { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Fire <span>Hits</span> TCG <span style="font-size:0.8rem; color:#888;">· Finanzas e Inventario</span></h1>
+  <div class="actions admin-only">
+    <button class="btn btn-secondary" onclick="exportJSON()">Exportar</button>
+    <button class="btn btn-secondary" onclick="exportCSV()">CSV</button>
+    <button class="btn btn-secondary" onclick="openReport()">Reporte</button>
+    <button class="btn btn-secondary" onclick="openCloudModal()">☁ Nube</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">Importar</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" id="tabFinanzas" onclick="switchTab('finanzas')">Finanzas</button>
+  <button class="tab" id="tabInventario" onclick="switchTab('inventario')">Inventario</button>
+  <button class="tab" id="tabCatalogo" onclick="switchTab('catalogo')">Catálogo</button>
+</nav>
+
+<div class="container">
+
+  <div class="page active" id="page-finanzas">
+    <div class="toolbar">
+      <button class="btn btn-primary admin-only" onclick="openModal()">+ Registrar movimiento</button>
+      <div class="filters" style="margin:0;">
+        <label>Tipo:
+          <select id="filterType" onchange="render()">
+            <option value="">Todos</option>
+            <option value="ingreso">Ingresos</option>
+            <option value="gasto">Gastos</option>
+          </select>
+        </label>
+        <label>Mes:
+          <select id="filterMonth" onchange="render()"></select>
+        </label>
+        <label>Buscar:
+          <input type="text" id="filterSearch" placeholder="Descripción o categoría..." oninput="render()">
+        </label>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="grid2">
+      <div class="panel full">
+        <h2>Historial</h2>
+        <div class="tablewrap" id="historyTable"></div>
+      </div>
+      <div class="panel">
+        <h2>Gastos por categoría</h2>
+        <canvas id="doughnutChart"></canvas>
+        <div class="legend" id="doughnutLegend"></div>
+      </div>
+      <div class="panel">
+        <h2>Ingresos vs Gastos (6 meses)</h2>
+        <canvas id="barChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-inventario">
+    <div class="toolbar">
+      <button class="btn btn-primary admin-only" onclick="openLotModal()">+ Agregar Lote</button>
+    </div>
+    <div class="stats" id="lotStats"></div>
+    <div id="lotList"></div>
+  </div>
+
+  <div class="page" id="page-catalogo">
+    <div class="toolbar">
+      <button class="btn btn-primary admin-only" onclick="openCatModal()">+ Agregar producto</button>
+      <div class="filters admin-only" style="margin:0;">
+        <label>Margen por defecto:
+          <input type="number" id="catMargin" min="0" style="width:90px;" onchange="setDefaultMargin(this.value)"> %
+        </label>
+      </div>
+    </div>
+    <div class="panel full">
+      <h2>Catálogo de productos</h2>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Producto</th><th>Costo ref.</th><th>Margen</th><th>Precio sugerido</th><th>Ganancia</th><th></th></tr>
+          </thead>
+          <tbody id="catalogTable"></tbody>
+        </table>
+      </div>
+      <div class="form-hint admin-only" style="margin-top:0.75rem;">Los productos del catálogo aparecen como sugerencias al crear lotes y ventas. El precio sugerido se aplica automáticamente al registrar ventas.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">Registrar movimiento</h2>
+    <input type="hidden" id="editId">
+    <div class="form-group">
+      <label>Tipo</label>
+      <select id="editType" onchange="toggleCostField()">
+        <option value="ingreso">Ingreso</option>
+        <option value="gasto">Gasto</option>
+      </select>
+    </div>
+    <div class="form-group" id="lotGroup">
+      <label>Lote</label>
+      <select id="editLot" onchange="onLotChange()"></select>
+    </div>
+    <div class="form-group" id="itemGroup">
+      <label>Producto</label>
+      <select id="editItem" onchange="onItemQtyChange()"></select>
+    </div>
+    <div class="form-group" id="qtyGroup">
+      <label>Unidades vendidas</label>
+      <input type="number" id="editQty" min="1" step="1" value="1" oninput="onItemQtyChange()">
+      <div class="form-hint" id="itemCostHint"></div>
+    </div>
+    <div class="form-group">
+      <label>Monto</label>
+      <input type="text" id="editAmount" placeholder="Ej: 150,00" inputmode="decimal" oninput="updateGainHint()">
+    </div>
+    <div class="form-group" id="suggestGroup" style="display:none;">
+      <div class="form-hint" id="suggestHint"></div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="useSuggested()">Usar precio sugerido</button>
+      <div class="form-hint" id="gainHint"></div>
+    </div>
+    <div class="form-group" id="costGroup">
+      <label>Costo del producto</label>
+      <input type="text" id="editCost" placeholder="Ej: 90,00" inputmode="decimal" oninput="document.getElementById('costAuto').value='no'">
+      <input type="hidden" id="costAuto" value="si">
+    </div>
+    <div class="form-group">
+      <label>Categoría</label>
+      <input type="text" id="editCategory" list="catList" placeholder="Escribe o elige...">
+      <datalist id="catList"></datalist>
+    </div>
+    <div class="form-group">
+      <label>Descripción</label>
+      <input type="text" id="editDesc" placeholder="Ej: Venta Charizard UPC">
+    </div>
+    <div class="form-group">
+      <label>Fecha</label>
+      <input type="date" id="editDate">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-danger" id="deleteBtn" style="display:none;" onclick="deleteFromModal()">Eliminar</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveTransaction()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="lotModalOverlay">
+  <div class="modal">
+    <h2 id="lotModalTitle">Agregar lote</h2>
+    <input type="hidden" id="editLotId">
+    <div class="form-group">
+      <label>Nombre del lote</label>
+      <input type="text" id="editLotName" placeholder="Ej: Pedido 1 - Octubre">
+    </div>
+    <div class="form-group">
+      <label>Fecha</label>
+      <input type="date" id="editLotDate">
+    </div>
+    <label class="items-label">Productos del lote</label>
+    <div id="lotItems"></div>
+    <button class="btn btn-secondary add-item-btn" onclick="addItemRow()">+ Agregar producto</button>
+    <div class="form-actions">
+      <button class="btn btn-danger" id="deleteLotBtn" style="display:none;" onclick="deleteLotFromModal()">Eliminar</button>
+      <button class="btn btn-secondary" onclick="closeLotModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveLot()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="catOverlay">
+  <div class="modal">
+    <h2 id="catModalTitle">Agregar producto</h2>
+    <input type="hidden" id="editCatId">
+    <div class="form-group">
+      <label>Nombre del producto</label>
+      <input type="text" id="editCatName" placeholder="Ej: Booster Box Obsidian Flames">
+    </div>
+    <div class="form-group">
+      <label>Costo de referencia</label>
+      <input type="text" id="editCatCost" placeholder="Ej: 90,00" inputmode="decimal">
+    </div>
+    <div class="form-group">
+      <label>Margen % (vacío = usar margen por defecto)</label>
+      <input type="number" id="editCatMargin" min="0" placeholder="Ej: 60">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-danger" id="deleteCatBtn" style="display:none;" onclick="deleteCatFromModal()">Eliminar</button>
+      <button class="btn btn-secondary" onclick="closeCatModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCatProduct()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="reportOverlay">
+  <div class="modal">
+    <h2>Estado de resultados</h2>
+    <div class="form-group">
+      <label>Mes</label>
+      <select id="reportMonth" onchange="renderReport()"></select>
+    </div>
+    <div id="reportBody"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeReport()">Cerrar</button>
+      <button class="btn btn-primary" onclick="printReport()">Imprimir / PDF</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cloudOverlay">
+  <div class="modal">
+    <h2>Nube (Firebase)</h2>
+    <p class="form-hint" id="cloudStatus">Sin conectar.</p>
+    <div class="form-group">
+      <label>Pega aquí el bloque completo de Firebase (tal cual aparece en la consola, incluyendo “const firebaseConfig = …”)</label>
+      <textarea id="cloudConfig" rows="7" style="width:100%; font-family:monospace; font-size:0.72rem; border-radius:8px; border:1px solid #333; background:#0f0f1a; color:#e0e0e0; padding:0.6rem 0.75rem;" placeholder='const firebaseConfig = { apiKey: "…", projectId: "…", appId: "…" }'>const firebaseConfig = {
+  apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
+  authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
+  projectId: "fire-hits-tcg-finanzas",
+  storageBucket: "fire-hits-tcg-finanzas.firebasestorage.app",
+  messagingSenderId: "1078239271531",
+  appId: "1:1078239271531:web:61499116da38f762ae6f2e",
+  measurementId: "G-KF5FR20KZ9"
+};</textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeCloudModal()">Cerrar</button>
+      <button class="btn btn-secondary" onclick="downloadCloud()">Descargar desde nube</button>
+      <button class="btn btn-success" onclick="uploadCloud(true)">Subir datos ahora</button>
+      <button class="btn btn-primary" onclick="saveCloudConfig()">Guardar y conectar</button>
+    </div>
+    <div style="margin-top:1.2rem; border-top:1px solid #2a2a4a; padding-top:1rem;">
+      <h3 style="color:#fff; font-size:0.95rem; margin-bottom:0.5rem;">Link público (solo lectura)</h3>
+      <div class="form-group">
+        <label>Clave para entrar</label>
+        <input type="text" id="shareClave" placeholder="Ej: Charizard123">
+      </div>
+      <div class="form-group">
+        <label>Tu dirección de GitHub Pages (se guarda; llénala una vez)</label>
+        <input type="text" id="shareBase" placeholder="Ej: https://tuusuario.github.io/FireHitsTCG">
+      </div>
+      <div class="form-actions" style="justify-content:flex-start;">
+        <button class="btn btn-success btn-sm" onclick="toggleShare(true)">Activar link</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleShare(false)">Desactivar</button>
+        <button class="btn btn-secondary btn-sm" id="shareCopyBtn" style="display:none;" onclick="copyShareLink()">Copiar link</button>
+      </div>
+      <p class="form-hint" id="shareStatus"></p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay active" id="adminOverlay">
+  <div class="modal" style="max-width:360px;">
+    <div style="text-align:center; margin-bottom:1rem;">
+      <div style="font-size:1.8rem; margin-bottom:0.4rem;">🔒</div>
+      <h2 style="margin-bottom:0.3rem;">Fire Hits TCG</h2>
+      <p class="form-hint" id="adminStatus">Área de administración.</p>
+    </div>
+    <div class="form-group">
+      <label>Clave de administrador</label>
+      <input type="password" id="adminClave" placeholder="Clave">
+    </div>
+    <div class="form-actions" style="justify-content:center;">
+      <button class="btn btn-primary" onclick="adminLogin()">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay active" id="publicOverlay">
+  <div class="modal">
+    <div style="text-align:center; margin-bottom:1rem;">
+      <div style="font-size:1.8rem; margin-bottom:0.4rem;">🔒</div>
+      <h2 style="margin-bottom:0.3rem;">Fire Hits TCG</h2>
+      <p class="form-hint" id="publicStatus">Verificando link...</p>
+    </div>
+    <div class="form-group">
+      <label>Clave de acceso</label>
+      <input type="password" id="publicClave" placeholder="Escribe la clave">
+    </div>
+    <div class="form-actions" style="justify-content:center;">
+      <button class="btn btn-primary" onclick="publicLogin()">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="catNamesList"></datalist>
+<div id="printReport"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORE_TX = 'firehits_finanzas';
+const STORE_LOTS = 'firehits_finanzas_lots';
+const STORE_CAT = 'firehits_finanzas_catalog';
+const STORE_CLOUD = 'firehits_finanzas_cloud';
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const INCOME_CATS = ['Venta', 'Venta Online', 'Seña / Apartado', 'Préstamo', 'Otro'];
+const EXPENSE_CATS = ['Inventario', 'Compras', 'Envío', 'Publicidad', 'Transporte', 'Comida', 'Herramientas', 'Otro'];
+const COLORS = ['#e63946','#e09f3e','#3a86ff','#8338ec','#2d6a4f','#fb8500','#06d6a0','#ff70a6','#118ab2','#8d99ae'];
+let transactions = [];
+let lots = [];
+let catalog = { margin: 50, products: [] };
+let cloud = null;
+let cloudApp = null;
+let cloudDb = null;
+let cloudDoc = null;
+let publicConfigDoc = null;
+let cloudReady = false;
+let cloudBusy = false;
+let cloudTimer = null;
+let processingId = null;
+let processingLotId = null;
+let lotItemsDraft = [];
+const IS_PUBLIC = new URLSearchParams(location.search).has('k');
+const PUBLIC_TOKEN = new URLSearchParams(location.search).get('k') || '';
+const ADMIN_CLAVE = 'admin123';
+let SHARE_URL = '';
+let PUBLIC_CONFIG = null;
+const FALLBACK_CONFIG = {
+  apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
+  authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
+  projectId: "fire-hits-tcg-finanzas",
+  storageBucket: "fire-hits-tcg-finanzas.firebasestorage.app",
+  messagingSenderId: "1078239271531",
+  appId: "1:1078239271531:web:61499116da38f762ae6f2e",
+  measurementId: "G-KF5FR20KZ9"
+};
+
+function loadLots() {
+  const stored = localStorage.getItem(STORE_LOTS);
+  if (stored) {
+    try {
+      const data = JSON.parse(stored);
+      lots = Array.isArray(data) ? normalizeLots(data) : [];
+    } catch(e) { lots = []; }
+  }
+}
+
+function normalizeLots(arr) {
+  return arr.map(l => {
+    if (l.items) return { ...l, items: (l.items || []).map(i => ({ id: Number(i.id), name: i.name || 'Producto', cost: Number(i.cost) || 0, units: Number(i.units) || 0 })) };
+    return { id: l.id, name: l.name || 'Lote', date: l.date || '', items: [{ id: 1, name: l.name || 'Producto', cost: Number(l.cost) || 0, units: Number(l.units) || 0 }] };
+  });
+}
+
+function saveLots() {
+  localStorage.setItem(STORE_LOTS, JSON.stringify(lots));
+  scheduleCloud();
+}
+
+function loadCatalog() {
+  const stored = localStorage.getItem(STORE_CAT);
+  if (stored) {
+    try {
+      catalog = normalizeCatalog(JSON.parse(stored));
+    } catch(e) { catalog = { margin: 50, products: [] }; }
+  }
+}
+
+function normalizeCatalog(d) {
+  const c = Array.isArray(d) ? { margin: 50, products: d } : { margin: Number((d && d.margin)) || 50, products: Array.isArray(d && d.products) ? d.products : [] };
+  c.products = c.products.map(p => ({
+    id: Number(p.id) || Math.floor(Math.random() * 1e9),
+    name: p.name || '',
+    cost: Number(p.cost) || 0,
+    margin: (p.margin === null || p.margin === undefined) ? null : Number(p.margin)
+  }));
+  return c;
+}
+
+function saveCatalog() {
+  localStorage.setItem(STORE_CAT, JSON.stringify(catalog));
+  scheduleCloud();
+}
+
+function nextCatId() {
+  return catalog.products.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1;
+}
+
+function loadTx() {
+  const stored = localStorage.getItem(STORE_TX);
+  if (stored) {
+    try { transactions = JSON.parse(stored); if (!Array.isArray(transactions)) transactions = []; }
+    catch(e) { transactions = []; }
+  }
+}
+
+function saveTx() {
+  localStorage.setItem(STORE_TX, JSON.stringify(transactions));
+  scheduleCloud();
+}
+
+function getNextId(arr) {
+  return arr.length ? Math.max(...arr.map(t => t.id)) + 1 : 1;
+}
+
+function nextItemId() {
+  return lots.reduce((m, l) => Math.max(m, ...(l.items || []).map(i => i.id)), 0) + 1;
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function formatMoney(n) {
+  const neg = n < 0 ? '-' : '';
+  const num = Math.abs(n);
+  const parts = num.toFixed(2).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return neg + '$' + parts.join(',');
+}
+
+function parseAmount(s) {
+  s = String(s).trim().replace(/\$/g,'').replace(/\s/g,'').replace(/\./g,'').replace(',', '.');
+  const v = parseFloat(s);
+  return isNaN(v) ? 0 : v;
+}
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError ? ' error' : '');
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getLot(id) {
+  return lots.find(l => l.id === Number(id));
+}
+
+function getItemInLot(lotId, itemId) {
+  const lot = getLot(lotId);
+  if (!lot || !itemId) return null;
+  return lot.items.find(i => i.id === Number(itemId)) || null;
+}
+
+function getFiltered() {
+  const type = document.getElementById('filterType').value;
+  const month = document.getElementById('filterMonth').value;
+  const search = document.getElementById('filterSearch').value.toLowerCase().trim();
+  return transactions.filter(t => {
+    if (type && t.type !== type) return false;
+    if (month && t.date && !t.date.startsWith(month)) return false;
+    const item = getItemInLot(t.lotId, t.itemId);
+    const hay = (t.desc || '') + ' ' + (t.category || '') + ' ' + (item ? item.name : '');
+    if (search && !hay.toLowerCase().includes(search)) return false;
+    return true;
+  });
+}
+
+function renderStats() {
+  const totalIn = transactions.filter(t => t.type === 'ingreso').reduce((s,t) => s + Number(t.amount), 0);
+  const totalOut = transactions.filter(t => t.type === 'gasto').reduce((s,t) => s + Number(t.amount), 0);
+  const totalCost = transactions.filter(t => t.type === 'ingreso').reduce((s,t) => s + (Number(t.cost) || 0), 0);
+  const gain = totalIn - totalCost;
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const monthIn = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
+  const monthOut = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><h3>Balance total</h3><p class="${totalIn-totalOut >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalIn-totalOut)}</p></div>
+    <div class="stat-card"><h3>Ingresos totales</h3><p class="c-green">${formatMoney(totalIn)}</p></div>
+    <div class="stat-card"><h3>Costos de productos</h3><p class="c-red">${formatMoney(totalCost)}</p></div>
+    <div class="stat-card"><h3>Ganancia neta</h3><p class="${gain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gain)}</p></div>
+    <div class="stat-card"><h3>Gastos totales</h3><p class="c-red">${formatMoney(totalOut)}</p></div>
+    <div class="stat-card"><h3>Este mes</h3><p class="c-white">${formatMoney(monthIn - monthOut)}</p></div>
+    <div class="stat-card"><h3>Movimientos</h3><p class="c-white">${transactions.length}</p></div>
+  `;
+}
+
+function renderHistory() {
+  const filtered = getFiltered();
+  const wrap = document.getElementById('historyTable');
+  if (!filtered.length) {
+    wrap.innerHTML = '<div class="empty-state"><h3>Sin movimientos</h3><p>Registra tu primer ingreso o gasto con el botón + Registrar movimiento.</p></div>';
+    return;
+  }
+  const sorted = [...filtered].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
+      </thead>
+      <tbody>
+        ${sorted.map(t => {
+          const parts = (t.date || '').split('-');
+          const dLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : t.date;
+          const item = getItemInLot(t.lotId, t.itemId);
+          const prod = item ? item.name : '';
+          return `<tr>
+            <td>${dLabel}</td>
+            <td><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
+            <td>${t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : '—'}</td>
+            <td>${escapeHtml(t.category || '-')}</td>
+            <td>${escapeHtml(t.desc || '-')}</td>
+            <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
+            <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}</td>
+            <td class="admin-only"><div class="td-actions">
+              <button class="btn btn-secondary btn-sm" onclick="openModal(${t.id})">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteTransaction(${t.id})">Eliminar</button>
+            </div></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  const totalRow = filtered.reduce((acc,t) => {
+    if (t.type === 'ingreso') acc.in += Number(t.amount);
+    else acc.out += Number(t.amount);
+    return acc;
+  }, {in:0, out:0});
+  wrap.innerHTML += `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b></p>`;
+}
+
+function renderCharts() {
+  const now = new Date();
+  const expByCat = {};
+  transactions.forEach(t => {
+    if (t.type !== 'gasto') return;
+    const c = t.category || 'Otro';
+    expByCat[c] = (expByCat[c] || 0) + Number(t.amount);
+  });
+  const expArr = Object.entries(expByCat).sort((a,b) => b[1]-a[1]);
+  drawDoughnut(expArr);
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    const inc = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0);
+    const exp = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0);
+    months.push({ label: MESES[d.getMonth()].slice(0,3), income: inc, expense: exp });
+  }
+  drawBarChart(months);
+}
+
+function drawDoughnut(entries) {
+  const canvas = document.getElementById('doughnutChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 340;
+  const h = canvas.clientHeight || 220;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const legend = document.getElementById('doughnutLegend');
+  const total = entries.reduce((s,e) => s + e[1], 0);
+  if (!total || !entries.length) {
+    ctx.fillStyle = '#888';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Sin gastos', w/2, h/2);
+    legend.innerHTML = '';
+    return;
+  }
+  const cx = w/2, cy = h/2, R = Math.min(w,h)/2 - 24, r = R * 0.55;
+  let start = -Math.PI/2;
+  entries.forEach((e,i) => {
+    const angle = (e[1]/total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, start, start + angle);
+    ctx.arc(cx, cy, r, start + angle, start, true);
+    ctx.closePath();
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.fill();
+    start += angle;
+  });
+  ctx.fillStyle = '#fff';
+  ctx.font = '700 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(formatMoney(total), cx, cy - 4);
+  ctx.fillStyle = '#888';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('total gastos', cx, cy + 14);
+  legend.innerHTML = entries.slice(0, 8).map((e,i) => `
+    <div class="legend-row">
+      <span class="legend-label"><span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>${escapeHtml(e[0])}</span>
+      <span class="legend-val">${formatMoney(e[1])}</span>
+    </div>`).join('');
+}
+
+function drawBarChart(months) {
+  const canvas = document.getElementById('barChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 340;
+  const h = canvas.clientHeight || 220;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const padL = 44, padR = 10, padT = 10, padB = 24;
+  const cw = w - padL - padR;
+  const ch = h - padT - padB;
+  let maxV = 1;
+  months.forEach(m => { maxV = Math.max(maxV, m.income, m.expense); });
+  const gridN = 4;
+  ctx.strokeStyle = '#24243f';
+  ctx.fillStyle = '#777';
+  ctx.font = '10px sans-serif';
+  for (let i = 0; i <= gridN; i++) {
+    const y = padT + ch - (i/gridN) * ch;
+    const val = maxV * (i/gridN);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(val) === 0 ? '0' : '$' + Math.round(val).toLocaleString('es'), padL - 6, y + 3);
+  }
+  if (!months.some(m => m.income || m.expense)) {
+    ctx.fillStyle = '#888';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Sin datos', w/2, h/2);
+    return;
+  }
+  const slot = cw / months.length;
+  const bw = Math.min(22, slot * 0.32);
+  months.forEach((m,i) => {
+    const cx = padL + slot * i + slot/2;
+    const bhIn = ch * (m.income/maxV);
+    const bhOut = ch * (m.expense/maxV);
+    ctx.fillStyle = '#2d6a4f';
+    ctx.fillRect(cx - bw - 2, padT + ch - bhIn, bw, bhIn);
+    ctx.fillStyle = '#e63946';
+    ctx.fillRect(cx + 2, padT + ch - bhOut, bw, bhOut);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.label, cx, h - 8);
+  });
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#95d5b2';
+  ctx.fillText('▪ Ingresos', padL, padT - 2);
+  ctx.fillStyle = '#e63946';
+  ctx.fillText('▪ Gastos', padL + 80, padT - 2);
+}
+
+function renderLots() {
+  const allItems = lots.reduce((acc,l) => acc.concat(l.items || []), []);
+  const totalProducts = allItems.length;
+  const totalUnits = allItems.reduce((s,i) => s + (Number(i.units) || 0), 0);
+  const totalValue = allItems.reduce((s,i) => s + (Number(i.cost) || 0) * (Number(i.units) || 0), 0);
+  const agotados = allItems.filter(i => (Number(i.units) || 0) <= 0).length;
+  document.getElementById('lotStats').innerHTML = `
+    <div class="stat-card"><h3>Lotes</h3><p class="c-white">${lots.length}</p></div>
+    <div class="stat-card"><h3>Productos</h3><p class="c-white">${totalProducts}</p></div>
+    <div class="stat-card"><h3>Unidades totales</h3><p class="c-white">${totalUnits}</p></div>
+    <div class="stat-card"><h3>Valor del inventario</h3><p class="c-green">${formatMoney(totalValue)}</p></div>
+    <div class="stat-card"><h3>Agotados</h3><p class="${agotados ? 'c-red' : 'c-white'}">${agotados}</p></div>
+  `;
+  const list = document.getElementById('lotList');
+  if (!lots.length) {
+    list.innerHTML = '<div class="empty-state"><h3>Sin lotes</h3><p>Agrega tu primer lote con el botón + Agregar Lote.</p></div>';
+    return;
+  }
+  const sorted = [...lots].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  list.innerHTML = sorted.map(l => {
+    const items = l.items || [];
+    const lotUnits = items.reduce((s,i) => s + (Number(i.units) || 0), 0);
+    const lotValue = items.reduce((s,i) => s + (Number(i.cost) || 0) * (Number(i.units) || 0), 0);
+    const parts = (l.date || '').split('-');
+    const dLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : (l.date || '—');
+    return `
+      <div class="lot-group">
+        <div class="lot-group-head">
+          <div>
+            <h3>📍 ${escapeHtml(l.name)}</h3>
+            <div class="sub">${dLabel} · ${items.length} producto(s) · ${lotUnits} unidades · ${formatMoney(lotValue)}</div>
+          </div>
+          <div class="lot-group-actions admin-only">
+            <button class="btn btn-secondary btn-sm" onclick="openLotModal(${l.id})">Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteLot(${l.id})">Eliminar</button>
+          </div>
+        </div>
+        ${items.length ? `
+        <table>
+          <thead>
+            <tr><th>Producto</th><th>Unidades</th><th>Costo / und</th><th>Valor total</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${items.map(i => {
+              const units = Number(i.units) || 0;
+              return `<tr>
+                <td>${escapeHtml(i.name)}</td>
+                <td>${units <= 0 ? '<span class="badge badge-agotado">Agotado</span>' : units + ' und'}</td>
+                <td>${formatMoney(i.cost)}</td>
+                <td class="${units > 0 ? 'c-green' : ''}">${formatMoney((i.cost || 0) * units)}</td>
+                <td class="admin-only"><button class="btn btn-danger btn-sm" onclick="deleteLotItem(${l.id}, ${i.id})">Quitar</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>` : '<div class="form-hint">Sin productos.</div>'}
+      </div>`;
+  }).join('');
+}
+
+function render() {
+  renderStats();
+  renderHistory();
+  renderCharts();
+  renderLots();
+  renderCatalog();
+  fillCatNamesDatalist();
+}
+
+function switchTab(name) {
+  document.getElementById('tabFinanzas').classList.toggle('active', name === 'finanzas');
+  document.getElementById('tabInventario').classList.toggle('active', name === 'inventario');
+  document.getElementById('tabCatalogo').classList.toggle('active', name === 'catalogo');
+  document.getElementById('page-finanzas').classList.toggle('active', name === 'finanzas');
+  document.getElementById('page-inventario').classList.toggle('active', name === 'inventario');
+  document.getElementById('page-catalogo').classList.toggle('active', name === 'catalogo');
+  render();
+}
+
+function buildMonthOptions() {
+  const sel = document.getElementById('filterMonth');
+  const now = new Date();
+  let opts = '<option value="">Todos los meses</option>';
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    opts += `<option value="${ym}">${MESES[d.getMonth()]} ${d.getFullYear()}</option>`;
+  }
+  sel.innerHTML = opts;
+}
+
+function fillCategories() {
+  document.getElementById('catList').innerHTML = [...new Set([...INCOME_CATS, ...EXPENSE_CATS, ...transactions.map(t => t.category).filter(Boolean)])].map(c => `<option value="${escapeHtml(c)}">`).join('');
+}
+
+function toggleCostField() {
+  const isIncome = document.getElementById('editType').value === 'ingreso';
+  document.getElementById('lotGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('itemGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('costGroup').style.display = isIncome ? 'block' : 'none';
+  if (!isIncome) {
+    document.getElementById('qtyGroup').style.display = 'none';
+    document.getElementById('itemCostHint').textContent = '';
+    document.getElementById('suggestGroup').style.display = 'none';
+    document.getElementById('gainHint').textContent = '';
+  }
+  if (isIncome) onItemQtyChange();
+}
+
+function suggestedFor() {
+  const lotId = Number(document.getElementById('editLot').value) || null;
+  const itemId = Number(document.getElementById('editItem').value) || null;
+  const item = getItemInLot(lotId, itemId);
+  const qty = parseInt(document.getElementById('editQty').value) || 0;
+  if (!item) return { item: null, value: 0, margin: 0 };
+  const defM = Number(catalog.margin) || 0;
+  const p = catalog.products.find(c => (c.name || '').toLowerCase() === (item.name || '').toLowerCase());
+  const margin = (p && p.margin !== null && p.margin !== undefined) ? (Number(p.margin) || 0) : defM;
+  const value = Math.round((Number(item.cost) || 0) * qty * (1 + margin / 100) * 100) / 100;
+  return { item, value, margin };
+}
+
+function useSuggested() {
+  const s = suggestedFor();
+  if (!s.item) return;
+  document.getElementById('editAmount').value = formatMoney(s.value);
+  updateGainHint();
+}
+
+function updateGainHint() {
+  const g = document.getElementById('gainHint');
+  const lotId = Number(document.getElementById('editLot').value) || null;
+  const itemId = Number(document.getElementById('editItem').value) || null;
+  const item = getItemInLot(lotId, itemId);
+  const qty = parseInt(document.getElementById('editQty').value) || 0;
+  const amount = parseAmount(document.getElementById('editAmount').value);
+  const type = document.getElementById('editType').value;
+  if (type === 'ingreso' && item && amount > 0) {
+    const costTotal = (Number(item.cost) || 0) * qty;
+    const gain = amount - costTotal;
+    g.textContent = 'Ganancia estimada: ' + formatMoney(gain) + (gain >= 0 ? '' : ' · revisa el precio');
+  } else {
+    g.textContent = '';
+  }
+}
+
+function fillLotSelect(selected) {
+  const sel = document.getElementById('editLot');
+  let opts = '<option value="">Sin lote</option>';
+  lots.forEach(l => {
+    const totalUnits = (l.items || []).reduce((s,i) => s + (Number(i.units) || 0), 0);
+    if (totalUnits > 0 || Number(selected) === l.id) {
+      opts += `<option value="${l.id}" ${Number(selected) === l.id ? 'selected' : ''}>${escapeHtml(l.name)} (${totalUnits} und)</option>`;
+    }
+  });
+  sel.innerHTML = opts;
+}
+
+function fillItemSelect(lotId, selected) {
+  const sel = document.getElementById('editItem');
+  let opts = '<option value="">Selecciona producto</option>';
+  const lot = getLot(lotId);
+  if (lot) (lot.items || []).filter(i => (Number(i.units) || 0) > 0 || Number(selected) === i.id).forEach(i => {
+    opts += `<option value="${i.id}" ${Number(selected) === i.id ? 'selected' : ''}>${escapeHtml(i.name)} (${i.units} und)</option>`;
+  });
+  sel.innerHTML = opts;
+}
+
+function onLotChange() {
+  const lotId = Number(document.getElementById('editLot').value) || null;
+  const prevItem = Number(document.getElementById('editItem').value) || null;
+  const keep = prevItem && getItemInLot(lotId, prevItem) ? prevItem : null;
+  fillItemSelect(lotId, keep);
+  if (!keep) document.getElementById('editItem').value = '';
+  if (!lotId) {
+    document.getElementById('qtyGroup').style.display = 'none';
+    document.getElementById('itemCostHint').textContent = '';
+  }
+  onItemQtyChange();
+}
+
+function onItemQtyChange() {
+  const lotId = Number(document.getElementById('editLot').value) || null;
+  const itemId = Number(document.getElementById('editItem').value) || null;
+  const item = getItemInLot(lotId, itemId);
+  const qty = parseInt(document.getElementById('editQty').value) || 0;
+  const hint = document.getElementById('itemCostHint');
+  const qtyGroup = document.getElementById('qtyGroup');
+  qtyGroup.style.display = item ? 'block' : 'none';
+  if (item) {
+    hint.textContent = 'Costo por unidad: ' + formatMoney(item.cost) + ' · Disponibles: ' + item.units;
+    if (document.getElementById('costAuto').value === 'si' || !document.getElementById('editCost').value) {
+      document.getElementById('editCost').value = formatMoney((item.cost || 0) * qty);
+      document.getElementById('costAuto').value = 'si';
+    }
+    const s = suggestedFor();
+    document.getElementById('suggestGroup').style.display = 'block';
+    document.getElementById('suggestHint').textContent = 'Precio sugerido (margen ' + (s.margin || 0) + '%): ' + formatMoney(s.value);
+    const amt = document.getElementById('editAmount');
+    if (!amt.value) amt.value = formatMoney(s.value);
+  } else {
+    hint.textContent = '';
+    document.getElementById('suggestGroup').style.display = 'none';
+  }
+  updateGainHint();
+}
+
+function openModal(id = null) {
+  processingId = id;
+  document.getElementById('modalTitle').textContent = id ? 'Editar movimiento' : 'Registrar movimiento';
+  fillCategories();
+  const existing = id ? transactions.find(t => t.id === id) : null;
+  fillLotSelect(existing ? existing.lotId : null);
+  fillItemSelect(existing ? existing.lotId : null, existing ? existing.itemId : null);
+  if (existing) {
+    document.getElementById('editId').value = existing.id;
+    document.getElementById('editType').value = existing.type;
+    document.getElementById('editAmount').value = formatMoney(existing.amount);
+    document.getElementById('editCost').value = existing.cost ? formatMoney(existing.cost) : '';
+    document.getElementById('costAuto').value = 'no';
+    document.getElementById('editQty').value = existing.qty || 1;
+    document.getElementById('editLot').value = existing.lotId || '';
+    document.getElementById('editItem').value = existing.itemId || '';
+    document.getElementById('editCategory').value = existing.category || '';
+    document.getElementById('editDesc').value = existing.desc || '';
+    document.getElementById('editDate').value = existing.date || todayStr();
+    document.getElementById('deleteBtn').style.display = 'inline-block';
+  } else {
+    document.getElementById('editId').value = '';
+    document.getElementById('editType').value = 'gasto';
+    document.getElementById('editAmount').value = '';
+    document.getElementById('editCost').value = '';
+    document.getElementById('costAuto').value = 'si';
+    document.getElementById('editQty').value = '1';
+    document.getElementById('editLot').value = '';
+    document.getElementById('editItem').value = '';
+    document.getElementById('editCategory').value = '';
+    document.getElementById('editDesc').value = '';
+    document.getElementById('editDate').value = todayStr();
+    document.getElementById('deleteBtn').style.display = 'none';
+  }
+  toggleCostField();
+  onLotChange();
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+function adjustStock(t, sign) {
+  if (!t || !t.lotId || !t.itemId || !t.qty) return;
+  const item = getItemInLot(t.lotId, t.itemId);
+  if (item) {
+    item.units = Math.max(0, (Number(item.units) || 0) + sign * (Number(t.qty) || 0));
+    saveLots();
+  }
+}
+
+function saveTransaction() {
+  const type = document.getElementById('editType').value;
+  const amount = parseAmount(document.getElementById('editAmount').value);
+  const lotId = type === 'ingreso' ? Number(document.getElementById('editLot').value) || null : null;
+  const itemId = type === 'ingreso' ? Number(document.getElementById('editItem').value) || null : null;
+  const qty = type === 'ingreso' ? (parseInt(document.getElementById('editQty').value) || 0) : 0;
+  let cost = type === 'ingreso' ? parseAmount(document.getElementById('editCost').value) : 0;
+  const category = document.getElementById('editCategory').value.trim();
+  const desc = document.getElementById('editDesc').value.trim();
+  const date = document.getElementById('editDate').value || todayStr();
+  if (amount <= 0) { showToast('Ingresa un monto válido', true); return; }
+  if (lotId) {
+    const item = getItemInLot(lotId, itemId);
+    if (!item) { showToast('Selecciona el producto del lote', true); return; }
+    if (qty <= 0) { showToast('Ingresa las unidades vendidas', true); return; }
+    if (qty > (Number(item.units) || 0)) { showToast('No hay suficientes unidades del producto', true); return; }
+    cost = cost || (item.cost || 0) * qty;
+  }
+  const id = document.getElementById('editId').value;
+  const data = { type, amount, cost: type === 'ingreso' ? cost : 0, lotId, itemId, qty, category, desc, date };
+  if (id) {
+    const idx = transactions.findIndex(t => t.id === Number(id));
+    if (idx !== -1) {
+      const original = transactions[idx];
+      adjustStock(original, +1);
+      transactions[idx] = { ...original, ...data };
+    }
+  } else {
+    data.id = getNextId(transactions);
+    transactions.push(data);
+  }
+  if (lotId) adjustStock(data, -1);
+  saveTx();
+  render();
+  closeModal();
+  showToast(id ? 'Movimiento actualizado' : 'Movimiento registrado');
+}
+
+function deleteTransaction(id) {
+  if (!confirm('¿Eliminar este movimiento?')) return;
+  const t = transactions.find(x => x.id === id);
+  adjustStock(t, +1);
+  transactions = transactions.filter(x => x.id !== id);
+  saveTx();
+  render();
+  showToast('Movimiento eliminado');
+}
+
+function deleteFromModal() {
+  const id = document.getElementById('editId').value;
+  if (id && confirm('¿Eliminar este movimiento?')) {
+    deleteTransaction(Number(id));
+    closeModal();
+  }
+}
+
+function addItemRow(item = null) {
+  lotItemsDraft.push({ id: item ? Number(item.id) : nextItemId(), name: item ? item.name : '', cost: item ? item.cost : '', units: item ? item.units : '' });
+  renderLotItems();
+}
+
+function removeItemRow(id) {
+  lotItemsDraft = lotItemsDraft.filter(i => i.id !== Number(id));
+  renderLotItems();
+}
+
+function renderLotItems() {
+  const container = document.getElementById('lotItems');
+  if (!lotItemsDraft.length) {
+    container.innerHTML = '<div class="form-hint">Sin productos. Agrega al menos uno.</div>';
+    return;
+  }
+  container.innerHTML = lotItemsDraft.map(i => `
+    <div class="lot-item-row" data-id="${i.id}">
+      <input class="li-name" list="catNamesList" oninput="onLotItemNameInput(this)" placeholder="Producto (ej: Booster Box)">
+      <input class="li-cost" placeholder="Costo/und" inputmode="decimal">
+      <input class="li-units" placeholder="Und" inputmode="numeric">
+      <button type="button" class="btn btn-danger btn-sm lot-remove admin-only" onclick="removeItemRow(${i.id})">✕</button>
+    </div>`).join('');
+  lotItemsDraft.forEach(i => {
+    const row = container.querySelector(`[data-id="${i.id}"]`);
+    if (!row) return;
+    row.querySelector('.li-name').value = i.name;
+    row.querySelector('.li-cost').value = i.cost;
+    row.querySelector('.li-units').value = i.units;
+  });
+}
+
+function openLotModal(id = null) {
+  processingLotId = id;
+  document.getElementById('lotModalTitle').textContent = id ? 'Editar lote' : 'Agregar lote';
+  if (id) {
+    const l = lots.find(x => x.id === id);
+    if (!l) return;
+    document.getElementById('editLotId').value = l.id;
+    document.getElementById('editLotName').value = l.name;
+    document.getElementById('editLotDate').value = l.date || todayStr();
+    lotItemsDraft = (l.items || []).map(i => ({ ...i }));
+    renderLotItems();
+    document.getElementById('deleteLotBtn').style.display = 'inline-block';
+  } else {
+    document.getElementById('editLotId').value = '';
+    document.getElementById('editLotName').value = '';
+    document.getElementById('editLotDate').value = todayStr();
+    lotItemsDraft = [];
+    renderLotItems();
+    addItemRow();
+    document.getElementById('deleteLotBtn').style.display = 'none';
+  }
+  document.getElementById('lotModalOverlay').classList.add('active');
+}
+
+function closeLotModal() {
+  document.getElementById('lotModalOverlay').classList.remove('active');
+}
+
+function saveLot() {
+  const name = document.getElementById('editLotName').value.trim();
+  const date = document.getElementById('editLotDate').value || todayStr();
+  if (!name) { showToast('El nombre del lote es obligatorio', true); return; }
+  const items = [];
+  document.querySelectorAll('#lotItems .lot-item-row').forEach(row => {
+    const id = Number(row.dataset.id);
+    const it = lotItemsDraft.find(d => d.id === id) || {};
+    const n = row.querySelector('.li-name').value.trim();
+    const co = parseAmount(row.querySelector('.li-cost').value);
+    const un = parseInt(row.querySelector('.li-units').value) || 0;
+    if (!n) return;
+    items.push({ id, name: n, cost: co, units: un });
+  });
+  if (!items.length) { showToast('Agrega al menos un producto al lote', true); return; }
+  const id = document.getElementById('editLotId').value;
+  if (id) {
+    const idx = lots.findIndex(l => l.id === Number(id));
+    if (idx !== -1) lots[idx] = { ...lots[idx], name, date, items };
+  } else {
+    lots.push({ id: getNextId(lots), name, date, items });
+  }
+  saveLots();
+  render();
+  closeLotModal();
+  showToast(id ? 'Lote actualizado' : 'Lote agregado');
+}
+
+function deleteLotItem(lotId, itemId) {
+  if (!confirm('¿Quitar este producto del lote? Las ventas anteriores no se afectan.')) return;
+  const lot = getLot(lotId);
+  if (lot) {
+    lot.items = (lot.items || []).filter(i => i.id !== Number(itemId));
+    saveLots();
+    render();
+    showToast('Producto quitado del lote');
+  }
+}
+
+function deleteLot(id) {
+  if (!confirm('¿Eliminar este lote? Las ventas anteriores no se afectan.')) return;
+  lots = lots.filter(l => l.id !== id);
+  saveLots();
+  render();
+  showToast('Lote eliminado');
+}
+
+function deleteLotFromModal() {
+  const id = document.getElementById('editLotId').value;
+  if (id && confirm('¿Eliminar este lote? Las ventas anteriores no se afectan.')) {
+    deleteLot(Number(id));
+    closeLotModal();
+  }
+}
+
+function exportJSON() {
+  const data = { transactions, lots, catalog };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'finanzas_fire_hits_tcg.json';
+  a.click();
+  showToast('Respaldo exportado');
+}
+
+function csvCell(v) {
+  v = String(v == null ? '' : v);
+  if (/[";\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+  return v;
+}
+
+function csvMoney(n) {
+  return (Number(n) || 0).toFixed(2).replace('.', ',');
+}
+
+function exportCSV() {
+  const rows = [['Fecha', 'Tipo', 'Lote', 'Producto', 'Categoría', 'Descripción', 'Unidades', 'Costo', 'Monto']];
+  [...transactions].sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(t => {
+    const item = getItemInLot(t.lotId, t.itemId);
+    const lot = getLot(t.lotId);
+    rows.push([
+      t.date || '',
+      t.type === 'ingreso' ? 'Ingreso' : 'Gasto',
+      lot ? lot.name : '',
+      item ? item.name : '',
+      t.category || '',
+      t.desc || '',
+      t.qty || 0,
+      t.type === 'ingreso' ? csvMoney(t.cost) : '',
+      csvMoney(t.amount)
+    ]);
+  });
+  const csv = rows.map(r => r.map(csvCell).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'finanzas_fire_hits_tcg.csv';
+  a.click();
+  showToast('CSV exportado (abre con Excel o Google Sheets)');
+}
+
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      let newTx = [];
+      let newLots = [];
+      let newCatalog = null;
+      if (Array.isArray(data)) {
+        newTx = data.filter(t => t && t.amount != null);
+      } else if (data && data.transactions) {
+        newTx = (data.transactions || []).filter(t => t && t.amount != null);
+        newLots = Array.isArray(data.lots) ? normalizeLots(data.lots) : [];
+        if (data.catalog) newCatalog = normalizeCatalog(data.catalog);
+      } else {
+        throw new Error('bad');
+      }
+      if (confirm('¿Reemplazar los movimientos e inventario actuales por los del archivo?')) {
+        transactions = newTx;
+        lots = newLots;
+        if (newCatalog) catalog = newCatalog;
+        saveTx();
+        saveLots();
+        saveCatalog();
+        render();
+        showToast(`Importados ${transactions.length} movimientos y ${lots.length} lotes`);
+      }
+    } catch(err) {
+      showToast('Archivo no válido', true);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function fillCatNamesDatalist() {
+  document.getElementById('catNamesList').innerHTML = catalog.products.map(p => `<option value="${escapeHtml(p.name)}">`).join('');
+}
+
+function onLotItemNameInput(el) {
+  const row = el.closest('.lot-item-row');
+  if (!row) return;
+  const p = catalog.products.find(c => (c.name || '').toLowerCase() === (el.value || '').trim().toLowerCase());
+  if (p && !row.querySelector('.li-cost').value) {
+    row.querySelector('.li-cost').value = String(Number(p.cost) || 0).replace('.', ',');
+  }
+}
+
+function setDefaultMargin(v) {
+  catalog.margin = Number(v) || 0;
+  saveCatalog();
+  render();
+  showToast('Margen por defecto: ' + catalog.margin + '%');
+}
+
+function renderCatalog() {
+  const defM = Number(catalog.margin) || 0;
+  const mInput = document.getElementById('catMargin');
+  if (mInput) mInput.value = defM;
+  const tbody = document.getElementById('catalogTable');
+  if (!catalog.products.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Sin productos en el catálogo. Agrega el primero con el botón + Agregar producto.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = catalog.products.map(p => {
+    const m = (p.margin === null || p.margin === undefined) ? defM : (Number(p.margin) || 0);
+    const sugg = (Number(p.cost) || 0) * (1 + m / 100);
+    return `
+      <tr>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${formatMoney(p.cost)}</td>
+        <td>${(p.margin === null || p.margin === undefined) ? m + '% (def.)' : m + '%'}</td>
+        <td class="c-green">${formatMoney(sugg)}</td>
+        <td class="c-green">+${formatMoney(sugg - p.cost)}</td>
+        <td class="admin-only"><div class="td-actions">
+          <button class="btn btn-secondary btn-sm" onclick="openCatModal(${p.id})">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCatProduct(${p.id})">Eliminar</button>
+        </div></td>
+      </tr>`;
+  }).join('');
+}
+
+function openCatModal(id = null) {
+  document.getElementById('catModalTitle').textContent = id ? 'Editar producto' : 'Agregar producto';
+  const p = id ? catalog.products.find(x => x.id === id) : null;
+  document.getElementById('editCatId').value = p ? p.id : '';
+  document.getElementById('editCatName').value = p ? p.name : '';
+  document.getElementById('editCatCost').value = p ? String(p.cost).replace('.', ',') : '';
+  document.getElementById('editCatMargin').value = (p && p.margin !== null && p.margin !== undefined) ? p.margin : '';
+  document.getElementById('deleteCatBtn').style.display = p ? 'inline-block' : 'none';
+  document.getElementById('catOverlay').classList.add('active');
+  document.getElementById('editCatName').focus();
+}
+
+function closeCatModal() {
+  document.getElementById('catOverlay').classList.remove('active');
+}
+
+function saveCatProduct() {
+  const name = document.getElementById('editCatName').value.trim();
+  if (!name) { showToast('El nombre es obligatorio', true); return; }
+  const cost = parseAmount(document.getElementById('editCatCost').value);
+  const marginStr = document.getElementById('editCatMargin').value.trim();
+  const margin = marginStr === '' ? null : (Number(marginStr) || 0);
+  const id = document.getElementById('editCatId').value;
+  if (id) {
+    const p = catalog.products.find(x => x.id === Number(id));
+    if (p) Object.assign(p, { name, cost, margin });
+  } else {
+    catalog.products.push({ id: nextCatId(), name, cost, margin });
+  }
+  saveCatalog();
+  render();
+  closeCatModal();
+  showToast(id ? 'Producto actualizado' : 'Producto agregado');
+}
+
+function deleteCatProduct(id) {
+  if (!confirm('¿Eliminar este producto del catálogo?')) return;
+  catalog.products = catalog.products.filter(p => p.id !== Number(id));
+  saveCatalog();
+  render();
+  showToast('Producto eliminado del catálogo');
+}
+
+function deleteCatFromModal() {
+  const id = document.getElementById('editCatId').value;
+  if (id && confirm('¿Eliminar este producto del catálogo?')) {
+    deleteCatProduct(Number(id));
+    closeCatModal();
+  }
+}
+
+function buildReportMonths() {
+  const sel = document.getElementById('reportMonth');
+  const now = new Date();
+  let opts = '';
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    opts += `<option value="${ym}">${MESES[d.getMonth()]} ${d.getFullYear()}</option>`;
+  }
+  sel.innerHTML = opts;
+  sel.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+}
+
+function reportHTML(ym) {
+  const tx = transactions.filter(t => t.date && t.date.startsWith(ym));
+  const inc = tx.filter(t => t.type === 'ingreso');
+  const exp = tx.filter(t => t.type === 'gasto');
+  const inTotal = inc.reduce((s, t) => s + Number(t.amount), 0);
+  const costTotal = inc.reduce((s, t) => s + (Number(t.cost) || 0), 0);
+  const expTotal = exp.reduce((s, t) => s + Number(t.amount), 0);
+  const gross = inTotal - costTotal;
+  const net = gross - expTotal;
+  const expByCat = {};
+  exp.forEach(t => { const c = t.category || 'Otro'; expByCat[c] = (expByCat[c] || 0) + Number(t.amount); });
+  const expArr = Object.entries(expByCat).sort((a, b) => b[1] - a[1]);
+  const prodMap = {};
+  inc.forEach(t => {
+    const key = (t.lotId || '') + ':' + (t.itemId || '');
+    if (!key.includes(':')) return;
+    const item = getItemInLot(t.lotId, t.itemId);
+    if (!item) return;
+    const p = prodMap[key] || (prodMap[key] = { name: item.name, qty: 0, inc: 0, cost: 0 });
+    p.qty += Number(t.qty) || 0;
+    p.inc += Number(t.amount) || 0;
+    p.cost += Number(t.cost) || 0;
+  });
+  const prodArr = Object.values(prodMap).sort((a, b) => b.inc - a.inc);
+  const moneyCell = (v) => `<td class="right">${formatMoney(v)}</td>`;
+  let html = `
+    <div class="stats" style="gap:0.5rem; margin-bottom:0.75rem;">
+      <div class="stat-card"><h3>Ingresos</h3><p class="c-green">${formatMoney(inTotal)}</p></div>
+      <div class="stat-card"><h3>Costos</h3><p class="c-red">${formatMoney(costTotal)}</p></div>
+      <div class="stat-card"><h3>Ganancia bruta</h3><p class="${gross >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gross)}</p></div>
+      <div class="stat-card"><h3>Gastos</h3><p class="c-red">${formatMoney(expTotal)}</p></div>
+      <div class="stat-card"><h3>Ganancia neta</h3><p class="${net >= 0 ? 'c-green' : 'c-red'}">${formatMoney(net)}</p></div>
+    </div>`;
+  html += `<h3 style="margin:0.9rem 0 0.5rem; font-size:0.95rem; color:#fff;">Gastos por categoría</h3>`;
+  if (expArr.length) {
+    html += `<table>
+      <thead><tr><th>Categoría</th><th class="right">Monto</th></tr></thead>
+      <tbody>${expArr.map(e => `<tr><td>${escapeHtml(e[0])}</td>${moneyCell(e[1])}</tr>`).join('')}
+      <tr><td class="tot">Total</td>${moneyCell(expTotal)}</tr></tbody>
+    </table>`;
+  } else {
+    html += '<p class="form-hint">Sin gastos en el mes.</p>';
+  }
+  html += `<h3 style="margin:0.9rem 0 0.5rem; font-size:0.95rem; color:#fff;">Ventas por producto</h3>`;
+  if (prodArr.length) {
+    html += `<table>
+      <thead><tr><th>Producto</th><th class="right">Unidades</th><th class="right">Monto</th><th class="right">Costo</th><th class="right">Ganancia</th></tr></thead>
+      <tbody>${prodArr.map(p => `
+        <tr><td>${escapeHtml(p.name)}</td><td class="right">${p.qty}</td>${moneyCell(p.inc)}${moneyCell(p.cost)}<td class="right">${formatMoney(p.inc - p.cost)}</td></tr>`).join('')}
+      </tbody></table>`;
+  } else {
+    html += '<p class="form-hint">Sin ventas de producto en el mes.</p>';
+  }
+  return html;
+}
+
+function openReport() {
+  buildReportMonths();
+  renderReport();
+  document.getElementById('reportOverlay').classList.add('active');
+}
+
+function closeReport() {
+  document.getElementById('reportOverlay').classList.remove('active');
+}
+
+function renderReport() {
+  const ym = document.getElementById('reportMonth').value;
+  const parts = ym.split('-');
+  const title = MESES[Number(parts[1]) - 1] + ' ' + parts[0];
+  document.getElementById('reportBody').innerHTML = `<p class="form-hint" style="margin-bottom:0.5rem;">${title}</p>` + reportHTML(ym);
+}
+
+function printReport() {
+  const ym = document.getElementById('reportMonth').value;
+  const parts = ym.split('-');
+  const title = MESES[Number(parts[1]) - 1] + ' ' + parts[0];
+  const now = new Date();
+  const generated = now.toLocaleDateString('es-VE') + ' ' + now.toLocaleTimeString('es-VE');
+  document.getElementById('printReport').innerHTML =
+    `<h1>Fire Hits TCG — Estado de resultados</h1><p class="meta">${title} · Generado: ${generated}</p>` + reportHTML(ym);
+  window.print();
+}
+
+function initFirebase() {
+  if (cloudReady) return true;
+  if (!cloud || typeof firebase === 'undefined') return false;
+  try {
+    if (!cloudApp) cloudApp = firebase.initializeApp(cloud.config, 'firehits');
+    cloudDb = firebase.firestore(cloudApp);
+    cloudDoc = cloudDb.collection('finanzas').doc('principal');
+    publicConfigDoc = cloudDb.collection('finanzas').doc('config');
+    cloudReady = true;
+    if (!IS_PUBLIC) setCloudStatus('Conectado a la nube');
+    return true;
+  } catch (e) {
+    setCloudStatus('Error: ' + e.message);
+    return false;
+  }
+}
+
+function setCloudStatus(msg) {
+  const el = document.getElementById('cloudStatus');
+  if (el) el.textContent = msg;
+}
+
+function openCloudModal() {
+  document.getElementById('cloudConfig').value = cloud && cloud.config ? JSON.stringify(cloud.config, null, 2) : '';
+  setCloudStatus(cloudReady ? 'Conectado' : (typeof firebase === 'undefined' ? 'Firebase no cargado (revisa internet) o sin configurar.' : (cloud ? 'Config guardada. Pulsa “Subir datos” para subir.' : 'Sin configurar.')));
+  document.getElementById('shareBase').value = localStorage.getItem('firehits_finanzas_sharebase') || '';
+  document.getElementById('cloudOverlay').classList.add('active');
+}
+
+function closeCloudModal() {
+  document.getElementById('cloudOverlay').classList.remove('active');
+}
+
+function parseFirebaseConfig(raw) {
+  raw = String(raw || '').trim();
+  raw = raw.replace(/\s*\/\/[^\n]*/g, '').replace(/\s*\/\*[\s\S]*?\*\//g, '');
+  raw = raw.replace(/^const\s+[\w$]+\s*=\s*/, '').replace(/;?\s*$/, '').trim();
+  if (!raw.startsWith('{') && !raw.includes('apiKey')) return { ok: false, keys: [], config: null };
+  const out = {};
+  const rx = /["']?([\w$]+)["']?\s*:\s*["']([^"']*)["']/g;
+  let m;
+  while ((m = rx.exec(raw)) !== null) out[m[1]] = m[2];
+  const ok = !!(out.apiKey && out.projectId);
+  return { ok, keys: Object.keys(out), config: ok ? out : null };
+}
+
+function saveCloudConfig() {
+  const raw = document.getElementById('cloudConfig').value;
+  const res = parseFirebaseConfig(raw);
+  if (!res.ok) {
+    const part = res.keys.length ? 'Detecté estas llaves: ' + res.keys.join(', ') + '. ' : 'No encontré ningún apiKey: "...". ';
+    setCloudStatus(part + 'Pega el bloque completo tal cual aparece en la consola (debe incluir apiKey y projectId).');
+    showToast('Configuración de Firebase no válida', true);
+    return;
+  }
+  const config = res.config;
+  cloud = { config, auto: true };
+  localStorage.setItem(STORE_CLOUD, JSON.stringify({ config, auto: true }));
+  setCloudStatus('Configuración guardada');
+  if (initFirebase()) {
+    uploadCloud(true);
+  } else {
+    setCloudStatus('Config guardada, pero Firebase script no cargó. Reintenta con internet.');
+  }
+}
+
+function uploadCloud(force) {
+  if (!initFirebase()) { showToast('Nube no conectada', true); return; }
+  if (cloudBusy) return;
+  cloudBusy = true;
+  const payload = {
+    transactions,
+    lots,
+    catalog,
+    updatedAt: new Date().toISOString()
+  };
+  cloudDoc.set(payload)
+    .then(() => {
+      cloudBusy = false;
+      showToast('Datos subidos a la nube');
+    })
+    .catch(e => {
+      cloudBusy = false;
+      showToast('Error de nube: ' + e.message, true);
+    });
+}
+
+function downloadCloud() {
+  if (!initFirebase()) { showToast('Nube no conectada', true); return; }
+  if (cloudBusy) return;
+  cloudBusy = true;
+  cloudDoc.get()
+    .then(snap => {
+      cloudBusy = false;
+      if (!snap.exists) { showToast('La nube está vacía todavía', true); return; }
+      const d = snap.data();
+      if (Array.isArray(d.transactions)) transactions = d.transactions;
+      if (Array.isArray(d.lots)) lots = normalizeLots(d.lots);
+      if (d.catalog) catalog = normalizeCatalog(d.catalog);
+      saveTx();
+      saveLots();
+      saveCatalog();
+      render();
+      showToast('Datos descargados de la nube');
+    })
+    .catch(e => {
+      cloudBusy = false;
+      showToast('Error de nube: ' + e.message, true);
+    });
+}
+
+function scheduleCloud() {
+  if (!cloud || cloud.auto !== true) return;
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(() => {
+    if (initFirebase()) uploadCloud(false);
+  }, 1500);
+}
+
+function loadCloud() {
+  if (IS_PUBLIC) {
+    cloud = { config: FALLBACK_CONFIG, auto: false };
+    setTimeout(() => initFirebase(), 1200);
+    initPublicGate();
+    return;
+  }
+  const st = localStorage.getItem(STORE_CLOUD);
+  if (st) {
+    try {
+      const d = JSON.parse(st);
+      if (d && d.config) cloud = { config: d.config, auto: d.auto !== false };
+    } catch (e) { cloud = null; }
+  }
+  if (!cloud) cloud = { config: FALLBACK_CONFIG, auto: false };
+  if (cloud) setTimeout(() => initFirebase(), 1200);
+}
+
+function showPublicStatus(msg) {
+  const el = document.getElementById('publicStatus');
+  if (el) el.textContent = msg;
+}
+
+function initPublicGate() {
+  document.body.classList.add('public');
+  const tryInit = () => {
+    if (initFirebase()) return publicCheckConfig();
+    setTimeout(tryInit, 300);
+  };
+  tryInit();
+}
+
+function publicCheckConfig() {
+  if (!publicConfigDoc) { showPublicStatus('Error de conexión. Reintenta en unos segundos.'); return; }
+  publicConfigDoc.get().then(snap => {
+    if (!snap.exists) { showPublicStatus('Este link no está disponible (falta config del dueño).'); return; }
+    const c = snap.data();
+    if (!c.compartir) { showPublicStatus('El link está desactivado por el dueño.'); return; }
+    if (!c.token || c.token !== PUBLIC_TOKEN) { showPublicStatus('Link no válido.'); return; }
+    PUBLIC_CONFIG = c;
+    showPublicStatus('Ingresa la clave para ver los datos.');
+    document.getElementById('publicClave').focus();
+  }).catch(() => showPublicStatus('Error de conexión. Reintenta en unos segundos.'));
+}
+
+function publicLogin() {
+  const v = document.getElementById('publicClave').value;
+  if (!v) { showPublicStatus('Escribe la clave.'); return; }
+  if (!PUBLIC_CONFIG || v !== PUBLIC_CONFIG.clave) {
+    showPublicStatus('Clave incorrecta.');
+    return;
+  }
+  publicLoadData();
+}
+
+function publicLoadData() {
+  showPublicStatus('Cargando datos...');
+  cloudDoc.get().then(snap => {
+    if (!snap.exists) { showPublicStatus('Todavía no hay datos. Vuelve más tarde.'); return; }
+    const d = snap.data();
+    transactions = Array.isArray(d.transactions) ? d.transactions : [];
+    lots = normalizeLots(Array.isArray(d.lots) ? d.lots : []);
+    catalog = normalizeCatalog(d.catalog || { margin: 50, products: [] });
+    document.getElementById('publicOverlay').classList.remove('active');
+    render();
+  }).catch(() => showPublicStatus('Error al cargar. Reintenta.'));
+}
+
+function genToken() {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function toggleShare(on) {
+  if (!initFirebase()) { showToast('Conecta la nube primero', true); return; }
+  const clave = document.getElementById('shareClave').value.trim();
+  if (on && !clave) { showToast('Pon una clave antes de activar', true); document.getElementById('shareClave').focus(); return; }
+  const token = on ? genToken() : '';
+  publicConfigDoc.set({ compartir: on, clave: on ? clave : '', token })
+    .then(() => {
+      const base = (document.getElementById('shareBase').value || '').trim().replace(/\/+$/, '');
+      localStorage.setItem('firehits_finanzas_sharebase', base);
+      const st = document.getElementById('shareStatus');
+      const btn = document.getElementById('shareCopyBtn');
+      if (on && base) {
+        SHARE_URL = base + '/finanzas.html?k=' + token;
+        st.innerHTML = 'Link activo. Comparte solo este link:<br><b style="color:#95d5b2; word-break:break-all;">' + SHARE_URL + '</b>';
+        btn.style.display = 'inline-block';
+      } else if (on) {
+        SHARE_URL = base + '/finanzas.html?k=' + token;
+        st.textContent = 'Link generado, pero falta tu dirección de GitHub Pages para armarlo. Escribe la dirección y pulsa Activar link otra vez.';
+        btn.style.display = 'none';
+      } else {
+        st.textContent = 'Link desactivado. Nadie puede entrar ya.';
+        btn.style.display = 'none';
+      }
+      showToast(on ? 'Link activado' : 'Link desactivado');
+    })
+    .catch(e => showToast('Error: ' + e.message, true));
+}
+
+function copyShareLink() {
+  if (!SHARE_URL) return;
+  const done = () => showToast('Link copiado al portapapeles');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(SHARE_URL).then(done).catch(() => { window.prompt('Copia el link:', SHARE_URL); });
+  } else {
+    window.prompt('Copia el link:', SHARE_URL);
+  }
+}
+
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+document.getElementById('lotModalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeLotModal();
+});
+document.getElementById('catOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeCatModal();
+});
+document.getElementById('reportOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeReport();
+});
+document.getElementById('cloudOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeCloudModal();
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !IS_PUBLIC) { closeModal(); closeLotModal(); closeCatModal(); closeReport(); closeCloudModal(); }
+});
+window.addEventListener('storage', function(e) {
+  if (IS_PUBLIC) return;
+  if (e.key === STORE_TX || e.key === STORE_LOTS || e.key === STORE_CAT) { loadTx(); loadLots(); loadCatalog(); render(); }
+});
+
+document.getElementById('publicClave').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') publicLogin();
+});
+document.getElementById('adminClave').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') adminLogin();
+});
+
+function adminLogin() {
+  const v = document.getElementById('adminClave').value;
+  if (v === ADMIN_CLAVE) {
+    document.getElementById('adminOverlay').classList.remove('active');
+    startApp();
+  } else {
+    document.getElementById('adminStatus').textContent = 'Clave incorrecta.';
+  }
+}
+
+function startApp() {
+  buildMonthOptions();
+  loadTx();
+  loadLots();
+  loadCatalog();
+  loadCloud();
+  render();
+}
+
+if (IS_PUBLIC) {
+  document.body.classList.add('public');
+  loadCloud();
+} else {
+  document.getElementById('adminOverlay').classList.add('active');
+}
+</script>
+</body>
+</html>
