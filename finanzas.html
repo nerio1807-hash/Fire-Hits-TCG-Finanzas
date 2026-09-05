@@ -447,8 +447,8 @@ function loadLots() {
 
 function normalizeLots(arr) {
   return arr.map(l => {
-    if (l.items) return { ...l, items: (l.items || []).map(i => ({ id: Number(i.id), name: i.name || 'Producto', cost: Number(i.cost) || 0, units: Number(i.units) || 0 })) };
-    return { id: l.id, name: l.name || 'Lote', date: l.date || '', items: [{ id: 1, name: l.name || 'Producto', cost: Number(l.cost) || 0, units: Number(l.units) || 0 }] };
+    if (l.items) return { ...l, items: (l.items || []).map(i => ({ id: Number(i.id), name: i.name || 'Producto', cost: Number(i.cost) || 0, costText: i.costText || '', units: Number(i.units) || 0 })) };
+    return { id: l.id, name: l.name || 'Lote', date: l.date || '', items: [{ id: 1, name: l.name || 'Producto', cost: Number(l.cost) || 0, costText: l.costText || '', units: Number(l.units) || 0 }] };
   });
 }
 
@@ -472,6 +472,7 @@ function normalizeCatalog(d) {
     id: Number(p.id) || Math.floor(Math.random() * 1e9),
     name: p.name || '',
     cost: Number(p.cost) || 0,
+    costText: p.costText || '',
     margin: (p.margin === null || p.margin === undefined) ? null : Number(p.margin)
   }));
   return c;
@@ -1100,7 +1101,7 @@ function deleteFromModal() {
 }
 
 function addItemRow(item = null) {
-  lotItemsDraft.push({ id: item ? Number(item.id) : nextItemId(), name: item ? item.name : '', cost: item ? item.cost : '', units: item ? item.units : '' });
+  lotItemsDraft.push({ id: item ? Number(item.id) : nextItemId(), name: item ? item.name : '', cost: item ? item.cost : '', costText: item && item.costText ? item.costText : '', units: item ? item.units : '' });
   renderLotItems();
 }
 
@@ -1123,7 +1124,7 @@ function renderLotItems() {
     return;
   }
   const names = lotItemsDraft.map(i => i.name || '');
-  const costs = lotItemsDraft.map(i => i.cost == null || i.cost === '' ? '' : formatEditValue(Number(i.cost)));
+  const costs = lotItemsDraft.map(i => i.costText ? i.costText : (i.cost == null || i.cost === '' ? '' : formatEditValue(Number(i.cost))));
   const units = lotItemsDraft.map(i => i.units == null || i.units === '' ? '' : i.units);
   container.innerHTML = lotItemsDraft.map(i => `
     <div class="lot-item-row" data-lot-item="${i.id}">
@@ -1179,7 +1180,7 @@ function saveLot() {
     const co = parseAmount(row.querySelector('.li-cost').value);
     const un = parseInt(row.querySelector('.li-units').value) || 0;
     if (!n) return;
-    items.push({ id, name: n, cost: co, units: un });
+    items.push({ id, name: n, cost: co, costText: (row.querySelector('.li-cost').value || '').trim(), units: un });
   });
   if (!items.length) { showToast('Agrega al menos un producto al lote', true); return; }
   const id = document.getElementById('editLotId').value;
@@ -1357,7 +1358,7 @@ function openCatModal(id = null) {
   const p = id ? catalog.products.find(x => x.id === id) : null;
   document.getElementById('editCatId').value = p ? p.id : '';
   document.getElementById('editCatName').value = p ? p.name : '';
-  document.getElementById('editCatCost').value = p ? formatEditValue(p.cost) : '';
+  document.getElementById('editCatCost').value = p ? (p.costText || formatEditValue(p.cost)) : '';
   document.getElementById('editCatMargin').value = (p && p.margin !== null && p.margin !== undefined) ? p.margin : '';
   document.getElementById('deleteCatBtn').style.display = p ? 'inline-block' : 'none';
   document.getElementById('catOverlay').classList.add('active');
@@ -1372,14 +1373,15 @@ function saveCatProduct() {
   const name = document.getElementById('editCatName').value.trim();
   if (!name) { showToast('El nombre es obligatorio', true); return; }
   const cost = parseAmount(document.getElementById('editCatCost').value);
+  const costText = document.getElementById('editCatCost').value.trim();
   const marginStr = document.getElementById('editCatMargin').value.trim();
   const margin = marginStr === '' ? null : (Number(marginStr) || 0);
   const id = document.getElementById('editCatId').value;
   if (id) {
     const p = catalog.products.find(x => x.id === Number(id));
-    if (p) Object.assign(p, { name, cost, margin });
+    if (p) Object.assign(p, { name, cost, costText, margin });
   } else {
-    catalog.products.push({ id: nextCatId(), name, cost, margin });
+    catalog.products.push({ id: nextCatId(), name, cost, costText, margin });
   }
   saveCatalog();
   render();
