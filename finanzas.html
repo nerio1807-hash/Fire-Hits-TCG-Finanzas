@@ -244,6 +244,12 @@ body.public .admin-only { display: none !important; }
         <select id="editGastoLot"></select>
       </div>
     </div>
+    <div class="form-group" id="multiModeGroup" style="display:none;">
+      <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
+        <input type="checkbox" id="multiSaleMode" onchange="onMultiSaleToggle()" style="margin:0;">
+        <span>Esta venta incluye varios productos</span>
+      </label>
+    </div>
     <div class="form-group" id="lotGroup">
       <label>Lote</label>
       <select id="editLot" onchange="onLotChange()"></select>
@@ -261,10 +267,23 @@ body.public .admin-only { display: none !important; }
       <label>Monto</label>
       <input type="text" id="editAmount" placeholder="Ej: 150,00" inputmode="decimal" oninput="updateGainHint()" onblur="formatFieldOnBlur(this)">
     </div>
+    <div class="form-group" id="discountGroup" style="display:none;">
+      <label>Descuento</label>
+      <input type="text" id="editDiscount" placeholder="Ej: 5,00" inputmode="decimal" oninput="updateGainHint()" onblur="formatFieldOnBlur(this)">
+      <div class="form-hint">Se resta del monto. Si el monto ya incluye el descuento, déjalo vacío.</div>
+    </div>
     <div class="form-group" id="suggestGroup" style="display:none;">
       <div class="form-hint" id="suggestHint"></div>
       <button type="button" class="btn btn-secondary btn-sm" onclick="useSuggested()">Usar precio sugerido</button>
       <div class="form-hint" id="gainHint"></div>
+    </div>
+    <div id="multiSaleGroup" style="display:none;">
+      <label class="items-label">Productos de esta venta</label>
+      <div id="multiSaleItems"></div>
+      <button class="btn btn-secondary add-item-btn" onclick="addMultiSaleRow()">+ Agregar producto</button>
+      <div style="margin-top:0.75rem; display:flex; justify-content:flex-end;">
+        <b id="multiSaleTotal" style="font-size:1.1rem;">Total: $0,00</b>
+      </div>
     </div>
     <div class="form-group">
       <label>Categoría</label>
@@ -449,6 +468,7 @@ let cloudWatcher = null;
 let watchStarted = false;
 let pendingGastoLotTxId = null;
 let openBalance = 0;
+let multiSaleLines = [];
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -727,7 +747,7 @@ function renderHistory() {
             <td>${escapeHtml(t.category || '-')}</td>
             <td>${escapeHtml(t.desc || '-')}</td>
             <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
-            <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}</td>
+            <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
             <td class="admin-only"><div class="td-actions">
               <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
               <button class="btn btn-danger btn-sm admin-only" onclick="deleteTransaction(${t.id})">Eliminar</button>
@@ -966,19 +986,120 @@ function fillCategories() {
 
 function toggleCostField() {
   const isIncome = document.getElementById('editType').value === 'ingreso';
-  document.getElementById('lotGroup').style.display = isIncome ? 'block' : 'none';
-  document.getElementById('itemGroup').style.display = isIncome ? 'block' : 'none';
+  const multi = isIncome && document.getElementById('multiSaleMode').checked;
+  document.getElementById('lotGroup').style.display = (isIncome && !multi) ? 'block' : 'none';
+  document.getElementById('itemGroup').style.display = (isIncome && !multi) ? 'block' : 'none';
+  document.getElementById('discountGroup').style.display = (isIncome && !multi) ? 'block' : 'none';
   document.getElementById('gastoLinkGroup').style.display = isIncome ? 'none' : 'block';
-  if (!isIncome) {
+  document.getElementById('multiModeGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('multiSaleGroup').style.display = multi ? 'block' : 'none';
+  if (multi) {
+    document.getElementById('qtyGroup').style.display = 'none';
+    document.getElementById('itemCostHint').textContent = '';
+    document.getElementById('suggestGroup').style.display = 'none';
+    document.getElementById('gainHint').textContent = '';
+    if (!multiSaleLines.length) addMultiSaleRow();
+  } else if (isIncome) {
+    fillLotSelect(Number(document.getElementById('editLot').value) || null, true);
+    onLotChange();
+  } else {
     document.getElementById('qtyGroup').style.display = 'none';
     document.getElementById('itemCostHint').textContent = '';
     document.getElementById('suggestGroup').style.display = 'none';
     document.getElementById('gainHint').textContent = '';
   }
-  if (isIncome) {
-    fillLotSelect(Number(document.getElementById('editLot').value) || null, true);
-    onLotChange();
+  if (isIncome) updateGainHint();
+}
+
+function onMultiSaleToggle() {
+  if (!document.getElementById('multiSaleMode').checked) multiSaleLines = [];
+  toggleCostField();
+}
+
+function syncMultiSaleFromDom() {
+  document.querySelectorAll('#multiSaleItems .multi-line-row').forEach((row, k) => {
+    const ln = multiSaleLines[k];
+    if (!ln) return;
+    ln.lotId = Number(row.querySelector('.ms-lot').value) || null;
+    ln.itemId = Number(row.querySelector('.ms-item').value) || null;
+    ln.qty = parseInt(row.querySelector('.ms-qty').value) || 1;
+    ln.price = row.querySelector('.ms-price').value === '' ? null : parseAmount(row.querySelector('.ms-price').value);
+    ln.discount = row.querySelector('.ms-disc').value === '' ? 0 : parseAmount(row.querySelector('.ms-disc').value);
+  });
+}
+
+function addMultiSaleRow() {
+  syncMultiSaleFromDom();
+  multiSaleLines.push({ lotId: null, itemId: null, qty: 1, price: null, discount: 0 });
+  renderMultiSaleLines();
+}
+
+function removeMultiSaleRow(k) {
+  syncMultiSaleFromDom();
+  multiSaleLines.splice(k, 1);
+  renderMultiSaleLines();
+}
+
+function onMultiLineLotChange(k) {
+  syncMultiSaleFromDom();
+  multiSaleLines[k].itemId = null;
+  renderMultiSaleLines();
+}
+
+function onMultiLineItemChange(k) {
+  syncMultiSaleFromDom();
+  const ln = multiSaleLines[k];
+  if (ln && ln.itemId) {
+    const item = getItemInLot(ln.lotId, ln.itemId);
+    const p = item ? catalog.products.find(c => (c.name || '').toLowerCase() === (item.name || '').toLowerCase()) : null;
+    ln.price = (p ? catSalePrice(p) : null) || (item ? Number(item.cost) : 0) || null;
   }
+  renderMultiSaleLines();
+}
+
+function lineOptionsFor(lotId, selectedItem) {
+  const lot = getLot(lotId);
+  let opts = '<option value="">— Producto —</option>';
+  if (lot) (lot.items || []).filter(i => i && (Number(i.units) || 0) > 0 || Number(selectedItem) === i.id).forEach(i => {
+    opts += `<option value="${i.id}" ${Number(selectedItem) === i.id ? 'selected' : ''}>${escapeHtml(i.name)} (${i.units} und)</option>`;
+  });
+  return opts;
+}
+
+function renderMultiSaleLines() {
+  syncMultiSaleFromDom();
+  const box = document.getElementById('multiSaleItems');
+  if (!multiSaleLines.length) { box.innerHTML = ''; return; }
+  box.innerHTML = multiSaleLines.map((ln, k) => `
+    <div class="lot-item-row multi-line-row" data-ms-row="${k}" style="flex-direction:column; align-items:stretch; border:1px solid #2a2a4a; padding:0.5rem; border-radius:8px; margin-bottom:0.5rem;">
+      <div style="display:flex; gap:0.5rem;">
+        <select class="ms-lot" style="flex:1;" onchange="onMultiLineLotChange(${k})">
+          <option value="">— Lote —</option>
+          ${lots.map(l => `<option value="${l.id}" ${Number(ln.lotId) === l.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
+        </select>
+        <select class="ms-item" style="flex:1.4;" onchange="onMultiLineItemChange(${k})">${lineOptionsFor(ln.lotId, ln.itemId)}</select>
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeMultiSaleRow(${k})">✕</button>
+      </div>
+      <div style="display:flex; gap:0.5rem; margin-top:0.4rem; align-items:flex-start;">
+        <label style="font-size:.72rem; color:#888; flex:1;">Und<br><input class="ms-qty" type="number" min="1" step="1" value="${ln.qty || 1}" oninput="recalcMultiSaleTotals()" style="width:100%;"></label>
+        <label style="font-size:.72rem; color:#888; flex:1.2;">Precio/und<br><input class="ms-price" placeholder="0,00" inputmode="decimal" value="${ln.price != null ? formatEditValue(ln.price) : ''}" oninput="recalcMultiSaleTotals()" onblur="formatFieldOnBlur(this);recalcMultiSaleTotals()" style="width:100%;"></label>
+        <label style="font-size:.72rem; color:#888; flex:1.1;">Desc/und<br><input class="ms-disc" placeholder="0,00" inputmode="decimal" value="${ln.discount ? formatEditValue(ln.discount) : ''}" oninput="recalcMultiSaleTotals()" onblur="formatFieldOnBlur(this);recalcMultiSaleTotals()" style="width:100%;"></label>
+        <b class="ms-line-total" style="flex:1; text-align:right; margin-top:1.1rem; color:#95d5b2;">${formatMoney(((ln.price || 0) - (ln.discount || 0)) * (ln.qty || 1))}</b>
+      </div>
+    </div>`).join('');
+  recalcMultiSaleTotals();
+}
+
+function recalcMultiSaleTotals() {
+  syncMultiSaleFromDom();
+  document.querySelectorAll('#multiSaleItems .multi-line-row').forEach((row, k) => {
+    const ln = multiSaleLines[k];
+    if (ln && row.querySelector('.ms-line-total')) {
+      row.querySelector('.ms-line-total').textContent = formatMoney(((ln.price || 0) - (ln.discount || 0)) * (ln.qty || 1));
+    }
+  });
+  const total = multiSaleLines.reduce((s, ln) => s + ((ln.price || 0) - (ln.discount || 0)) * (ln.qty || 1), 0);
+  document.getElementById('multiSaleTotal').textContent = 'Total de la venta: ' + formatMoney(total);
 }
 
 function onGastoLinkChange() {
@@ -1022,7 +1143,8 @@ function updateGainHint() {
   const itemId = Number(document.getElementById('editItem').value) || null;
   const item = getItemInLot(lotId, itemId);
   const qty = parseInt(document.getElementById('editQty').value) || 0;
-  const amount = parseAmount(document.getElementById('editAmount').value);
+  const disc = parseAmount(document.getElementById('editDiscount').value) || 0;
+  const amount = (parseAmount(document.getElementById('editAmount').value) || 0) - disc;
   const type = document.getElementById('editType').value;
   if (type === 'ingreso' && item && amount > 0) {
     const costTotal = (Number(item.cost) || 0) * qty;
@@ -1101,6 +1223,7 @@ function openModal(id = null) {
     document.getElementById('editId').value = existing.id;
     document.getElementById('editType').value = existing.type;
     document.getElementById('editAmount').value = formatEditValue(existing.amount);
+    document.getElementById('editDiscount').value = existing.discount ? formatEditValue(existing.discount) : '';
     document.getElementById('editQty').value = existing.qty || 1;
     document.getElementById('editLot').value = existing.lotId || '';
     document.getElementById('editItem').value = existing.itemId || '';
@@ -1114,6 +1237,7 @@ function openModal(id = null) {
     document.getElementById('editId').value = '';
     document.getElementById('editType').value = 'gasto';
     document.getElementById('editAmount').value = '';
+    document.getElementById('editDiscount').value = '';
     document.getElementById('editQty').value = '1';
     document.getElementById('editLot').value = '';
     document.getElementById('editItem').value = '';
@@ -1124,6 +1248,8 @@ function openModal(id = null) {
     document.getElementById('editGastoLink').value = '';
     document.getElementById('editGastoLot').value = '';
   }
+  document.getElementById('multiSaleMode').checked = false;
+  multiSaleLines = [];
   toggleCostField();
   onGastoLinkChange();
   onLotChange();
@@ -1145,14 +1271,51 @@ function adjustStock(t, sign) {
 
 function saveTransaction() {
   const type = document.getElementById('editType').value;
-  const amount = parseAmount(document.getElementById('editAmount').value);
+  const inMonto = parseAmount(document.getElementById('editAmount').value);
+  const discount = type === 'ingreso' ? (parseAmount(document.getElementById('editDiscount').value) || 0) : 0;
+  const amount = type === 'ingreso' ? inMonto - discount : inMonto;
+  const category = document.getElementById('editCategory').value.trim();
+  const desc = document.getElementById('editDesc').value.trim();
+  const date = document.getElementById('editDate').value || todayStr();
+  const id = document.getElementById('editId').value;
+
+  if (type === 'ingreso' && document.getElementById('multiSaleMode').checked) {
+    syncMultiSaleFromDom();
+    const rows = document.querySelectorAll('#multiSaleItems .multi-line-row');
+    const evts = [];
+    for (const row of rows) {
+      const lotId = Number(row.querySelector('.ms-lot').value) || null;
+      const itemId = Number(row.querySelector('.ms-item').value) || null;
+      const item = getItemInLot(lotId, itemId);
+      if (!lotId || !item) { showToast('Cada producto necesita su lote y su producto', true); return; }
+      const qty = parseInt(row.querySelector('.ms-qty').value) || 0;
+      if (qty <= 0) { showToast('Ingresa las unidades de cada producto', true); return; }
+      if (qty > (Number(item.units) || 0)) { showToast('No hay suficientes unidades de "' + item.name + '"', true); return; }
+      const price = parseAmount(row.querySelector('.ms-price').value);
+      const disc = parseAmount(row.querySelector('.ms-disc').value) || 0;
+      const lineAmount = Math.round(((price || 0) - disc) * qty * 100) / 100;
+      if (lineAmount <= 0) { showToast('El total de "' + item.name + '" debe ser mayor a 0', true); return; }
+      evts.push({ type, amount: lineAmount, cost: (Number(item.cost) || 0) * qty, discount: Math.round(disc * qty * 100) / 100, lotId, itemId, qty, category, desc, date });
+    }
+    if (!evts.length) { showToast('Agrega al menos un producto a la venta', true); return; }
+    let total = 0;
+    evts.forEach(e => {
+      e.id = getNextId(transactions);
+      transactions.push(e);
+      adjustStock(e, -1);
+      total += Number(e.amount) || 0;
+    });
+    saveTx();
+    render();
+    closeModal();
+    showToast('Venta registrada: ' + evts.length + ' producto(s) · Total ' + formatMoney(total));
+    return;
+  }
+
   const lotId = type === 'ingreso' ? Number(document.getElementById('editLot').value) || null : null;
   const itemId = type === 'ingreso' ? Number(document.getElementById('editItem').value) || null : null;
   const qty = type === 'ingreso' ? (parseInt(document.getElementById('editQty').value) || 0) : 0;
   let cost = 0;
-  const category = document.getElementById('editCategory').value.trim();
-  const desc = document.getElementById('editDesc').value.trim();
-  const date = document.getElementById('editDate').value || todayStr();
   if (amount <= 0) { showToast('Ingresa un monto válido', true); return; }
   let soldItem = null;
   if (type === 'ingreso') {
@@ -1164,7 +1327,6 @@ function saveTransaction() {
     cost = (item.cost || 0) * qty;
     soldItem = { name: item.name, units: Number(item.units) || 0 };
   }
-  const id = document.getElementById('editId').value;
   let linkNewLot = false;
   if (type === 'gasto') {
     const gl = document.getElementById('editGastoLink').value;
@@ -1176,7 +1338,7 @@ function saveTransaction() {
       linkNewLot = true;
     }
   }
-  const data = { type, amount, cost: type === 'ingreso' ? cost : 0, lotId, itemId, qty, category, desc, date };
+  const data = { type, amount, cost: type === 'ingreso' ? cost : 0, discount, lotId, itemId, qty, category, desc, date };
   if (id) {
     const idx = transactions.findIndex(t => t.id === Number(id));
     if (idx !== -1) {
