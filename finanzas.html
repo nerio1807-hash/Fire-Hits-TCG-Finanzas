@@ -251,7 +251,7 @@ body.public .admin-only { display: none !important; }
     </div>
     <div class="form-group">
       <label>Monto</label>
-      <input type="text" id="editAmount" placeholder="Ej: 150,00" inputmode="decimal" oninput="updateGainHint()">
+      <input type="text" id="editAmount" placeholder="Ej: 150,00" inputmode="decimal" oninput="updateGainHint()" onblur="formatFieldOnBlur(this)">
     </div>
     <div class="form-group" id="suggestGroup" style="display:none;">
       <div class="form-hint" id="suggestHint"></div>
@@ -260,7 +260,7 @@ body.public .admin-only { display: none !important; }
     </div>
     <div class="form-group" id="costGroup">
       <label>Costo del producto</label>
-      <input type="text" id="editCost" placeholder="Ej: 90,00" inputmode="decimal" oninput="document.getElementById('costAuto').value='no'">
+      <input type="text" id="editCost" placeholder="Ej: 90,00" inputmode="decimal" oninput="document.getElementById('costAuto').value='no'" onblur="formatFieldOnBlur(this)">
       <input type="hidden" id="costAuto" value="si">
     </div>
     <div class="form-group">
@@ -317,7 +317,7 @@ body.public .admin-only { display: none !important; }
     </div>
     <div class="form-group">
       <label>Costo de referencia</label>
-      <input type="text" id="editCatCost" placeholder="Ej: 90,00" inputmode="decimal">
+      <input type="text" id="editCatCost" placeholder="Ej: 90,00" inputmode="decimal" onblur="formatFieldOnBlur(this)">
     </div>
     <div class="form-group">
       <label>Margen % (vacío = usar margen por defecto)</label>
@@ -504,7 +504,9 @@ function getNextId(arr) {
 }
 
 function nextItemId() {
-  return lots.reduce((m, l) => Math.max(m, ...(l.items || []).map(i => i.id)), 0) + 1;
+  let m = 0;
+  lots.forEach(l => (l.items || []).forEach(i => { const n = Number(i.id); if (n > m) m = n; }));
+  return m + 1;
 }
 
 function todayStr() {
@@ -521,9 +523,34 @@ function formatMoney(n) {
 }
 
 function parseAmount(s) {
-  s = String(s).trim().replace(/\$/g,'').replace(/\s/g,'').replace(/\./g,'').replace(',', '.');
-  const v = parseFloat(s);
+  s = String(s).trim().replace(/\$/g,'').replace(/\s/g,'');
+  if (!s) return 0;
+  let out;
+  if (s.includes(',') && s.includes('.')) {
+    out = s.replace(/\./g,'').replace(',', '.');
+  } else if (s.includes(',')) {
+    out = s.replace(',', '.');
+  } else if (s.includes('.')) {
+    out = s.replace(/\./g,'');
+  } else {
+    out = s;
+  }
+  const v = parseFloat(out);
   return isNaN(v) ? 0 : v;
+}
+
+function formatEditValue(n) {
+  const num = Math.abs(Number(n) || 0);
+  const parts = num.toFixed(2).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return parts.join(',');
+}
+
+function formatFieldOnBlur(el) {
+  if (!el) return;
+  const v = String(el.value || '').trim();
+  if (!v) { el.value = ''; return; }
+  el.value = formatEditValue(parseAmount(v));
 }
 
 function showToast(msg, isError = false) {
@@ -882,7 +909,7 @@ function suggestedFor() {
 function useSuggested() {
   const s = suggestedFor();
   if (!s.item) return;
-  document.getElementById('editAmount').value = formatMoney(s.value);
+  document.getElementById('editAmount').value = formatEditValue(s.value);
   updateGainHint();
 }
 
@@ -949,14 +976,14 @@ function onItemQtyChange() {
   if (item) {
     hint.textContent = 'Costo por unidad: ' + formatMoney(item.cost) + ' · Disponibles: ' + item.units;
     if (document.getElementById('costAuto').value === 'si' || !document.getElementById('editCost').value) {
-      document.getElementById('editCost').value = formatMoney((item.cost || 0) * qty);
+      document.getElementById('editCost').value = formatEditValue((item.cost || 0) * qty);
       document.getElementById('costAuto').value = 'si';
     }
     const s = suggestedFor();
     document.getElementById('suggestGroup').style.display = 'block';
     document.getElementById('suggestHint').textContent = 'Precio sugerido (margen ' + (s.margin || 0) + '%): ' + formatMoney(s.value);
     const amt = document.getElementById('editAmount');
-    if (!amt.value) amt.value = formatMoney(s.value);
+    if (!amt.value) amt.value = formatEditValue(s.value);
   } else {
     hint.textContent = '';
     document.getElementById('suggestGroup').style.display = 'none';
@@ -974,8 +1001,8 @@ function openModal(id = null) {
   if (existing) {
     document.getElementById('editId').value = existing.id;
     document.getElementById('editType').value = existing.type;
-    document.getElementById('editAmount').value = formatMoney(existing.amount);
-    document.getElementById('editCost').value = existing.cost ? formatMoney(existing.cost) : '';
+    document.getElementById('editAmount').value = formatEditValue(existing.amount);
+    document.getElementById('editCost').value = existing.cost ? formatEditValue(existing.cost) : '';
     document.getElementById('costAuto').value = 'no';
     document.getElementById('editQty').value = existing.qty || 1;
     document.getElementById('editLot').value = existing.lotId || '';
@@ -1084,23 +1111,31 @@ function removeItemRow(id) {
 
 function renderLotItems() {
   const container = document.getElementById('lotItems');
+  const seen = {};
+  lotItemsDraft = lotItemsDraft.map(i => {
+    let id = Number(i.id) || 0;
+    if (!id || seen[id]) id = nextItemId();
+    seen[id] = true;
+    return { ...i, id };
+  });
   if (!lotItemsDraft.length) {
     container.innerHTML = '<div class="form-hint">Sin productos. Agrega al menos uno.</div>';
     return;
   }
+  const names = lotItemsDraft.map(i => i.name || '');
+  const costs = lotItemsDraft.map(i => i.cost == null || i.cost === '' ? '' : i.cost);
+  const units = lotItemsDraft.map(i => i.units == null || i.units === '' ? '' : i.units);
   container.innerHTML = lotItemsDraft.map(i => `
-    <div class="lot-item-row" data-id="${i.id}">
+    <div class="lot-item-row" data-lot-item="${i.id}">
       <input class="li-name" list="catNamesList" oninput="onLotItemNameInput(this)" placeholder="Producto (ej: Booster Box)">
-      <input class="li-cost" placeholder="Costo/und" inputmode="decimal">
+      <input class="li-cost" placeholder="Costo/und" inputmode="decimal" onblur="formatFieldOnBlur(this)">
       <input class="li-units" placeholder="Und" inputmode="numeric">
       <button type="button" class="btn btn-danger btn-sm lot-remove admin-only" onclick="removeItemRow(${i.id})">✕</button>
     </div>`).join('');
-  lotItemsDraft.forEach(i => {
-    const row = container.querySelector(`[data-id="${i.id}"]`);
-    if (!row) return;
-    row.querySelector('.li-name').value = i.name;
-    row.querySelector('.li-cost').value = i.cost;
-    row.querySelector('.li-units').value = i.units;
+  container.querySelectorAll('.lot-item-row').forEach((row, k) => {
+    row.querySelector('.li-name').value = names[k];
+    row.querySelector('.li-cost').value = costs[k];
+    row.querySelector('.li-units').value = units[k];
   });
 }
 
@@ -1138,7 +1173,7 @@ function saveLot() {
   if (!name) { showToast('El nombre del lote es obligatorio', true); return; }
   const items = [];
   document.querySelectorAll('#lotItems .lot-item-row').forEach(row => {
-    const id = Number(row.dataset.id);
+    const id = Number(row.dataset.lotItem);
     const it = lotItemsDraft.find(d => d.id === id) || {};
     const n = row.querySelector('.li-name').value.trim();
     const co = parseAmount(row.querySelector('.li-cost').value);
@@ -1322,7 +1357,7 @@ function openCatModal(id = null) {
   const p = id ? catalog.products.find(x => x.id === id) : null;
   document.getElementById('editCatId').value = p ? p.id : '';
   document.getElementById('editCatName').value = p ? p.name : '';
-  document.getElementById('editCatCost').value = p ? String(p.cost).replace('.', ',') : '';
+  document.getElementById('editCatCost').value = p ? formatEditValue(p.cost) : '';
   document.getElementById('editCatMargin').value = (p && p.margin !== null && p.margin !== undefined) ? p.margin : '';
   document.getElementById('deleteCatBtn').style.display = p ? 'inline-block' : 'none';
   document.getElementById('catOverlay').classList.add('active');
