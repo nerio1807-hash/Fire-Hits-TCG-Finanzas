@@ -203,23 +203,18 @@ body.public .admin-only { display: none !important; }
   <div class="page" id="page-catalogo">
     <div class="toolbar">
       <button class="btn btn-primary admin-only" onclick="openCatModal()">+ Agregar producto</button>
-      <div class="filters admin-only" style="margin:0;">
-        <label>Margen por defecto:
-          <input type="number" id="catMargin" min="0" style="width:90px;" onchange="setDefaultMargin(this.value)"> %
-        </label>
-      </div>
     </div>
     <div class="panel full">
       <h2>Catálogo de productos</h2>
       <div class="tablewrap">
         <table>
           <thead>
-            <tr><th>Producto</th><th>Costo ref.</th><th>Margen</th><th>Precio sugerido</th><th>Ganancia</th><th></th></tr>
+            <tr><th>Producto</th><th>Costo</th><th>Precio de venta</th><th>Ganancia</th><th></th></tr>
           </thead>
           <tbody id="catalogTable"></tbody>
         </table>
       </div>
-      <div class="form-hint admin-only" style="margin-top:0.75rem;">Los productos del catálogo aparecen como sugerencias al crear lotes y ventas. El precio sugerido se aplica automáticamente al registrar ventas.</div>
+      <div class="form-hint admin-only" style="margin-top:0.75rem;">Escribe en cada producto su precio de venta. Ese precio se usa como sugerencia al registrar ventas y en la proyección del inicio.</div>
     </div>
   </div>
 
@@ -235,6 +230,18 @@ body.public .admin-only { display: none !important; }
         <option value="ingreso">Ingreso</option>
         <option value="gasto">Gasto</option>
       </select>
+    </div>
+    <div class="form-group" id="gastoLinkGroup" style="display:none;">
+      <label>Este gasto es...</label>
+      <select id="editGastoLink" onchange="onGastoLinkChange()">
+        <option value="">Un gasto normal (envío, insumos, etc.)</option>
+        <option value="existing">Compra de un lote existente</option>
+        <option value="new">Compra de un lote nuevo</option>
+      </select>
+      <div class="form-group" id="existingLotGroup" style="display:none; margin-top:0.5rem;">
+        <label>¿A cuál lote lo agregas?</label>
+        <select id="editGastoLot"></select>
+      </div>
     </div>
     <div class="form-group" id="lotGroup">
       <label>Lote</label>
@@ -257,11 +264,6 @@ body.public .admin-only { display: none !important; }
       <div class="form-hint" id="suggestHint"></div>
       <button type="button" class="btn btn-secondary btn-sm" onclick="useSuggested()">Usar precio sugerido</button>
       <div class="form-hint" id="gainHint"></div>
-    </div>
-    <div class="form-group" id="costGroup">
-      <label>Costo del producto</label>
-      <input type="text" id="editCost" placeholder="Ej: 90,00" inputmode="decimal" oninput="document.getElementById('costAuto').value='no'" onblur="formatFieldOnBlur(this)">
-      <input type="hidden" id="costAuto" value="si">
     </div>
     <div class="form-group">
       <label>Categoría</label>
@@ -320,8 +322,9 @@ body.public .admin-only { display: none !important; }
       <input type="text" id="editCatCost" placeholder="Ej: 90,00" inputmode="decimal" onblur="formatFieldOnBlur(this)">
     </div>
     <div class="form-group">
-      <label>Margen % (vacío = usar margen por defecto)</label>
-      <input type="number" id="editCatMargin" min="0" placeholder="Ej: 60">
+      <label>Precio de venta</label>
+      <input type="text" id="editCatPrice" placeholder="Ej: 150,00" inputmode="decimal" onblur="formatFieldOnBlur(this)">
+      <div class="form-hint">Se usa como precio sugerido al registrar ventas y en la proyección del inicio.</div>
     </div>
     <div class="form-actions">
       <button class="btn btn-danger" id="deleteCatBtn" style="display:none;" onclick="deleteCatFromModal()">Eliminar</button>
@@ -425,6 +428,7 @@ let currentUser = null;
 let authObserverAttached = false;
 let cloudWatcher = null;
 let watchStarted = false;
+let pendingGastoLotTxId = null;
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -473,6 +477,8 @@ function normalizeCatalog(d) {
     name: p.name || '',
     cost: Number(p.cost) || 0,
     costText: p.costText || '',
+    price: (p.price === null || p.price === undefined || p.price === '') ? null : Number(p.price),
+    priceText: p.priceText || '',
     margin: (p.margin === null || p.margin === undefined) ? null : Number(p.margin)
   }));
   return c;
@@ -487,6 +493,12 @@ function nextCatId() {
   return catalog.products.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1;
 }
 
+function catSalePrice(p) {
+  if (p && p.price != null && !isNaN(p.price)) return Number(p.price);
+  if (p && p.margin != null && !isNaN(Number(p.margin))) return (Number(p.cost) || 0) * (1 + (Number(p.margin) || 0) / 100);
+  return null;
+}
+
 function syncCatalogFromLots() {
   const names = new Set(catalog.products.map(p => (p.name || '').toLowerCase()));
   let added = 0;
@@ -495,7 +507,7 @@ function syncCatalogFromLots() {
     const k = i.name.toLowerCase();
     if (names.has(k)) return;
     names.add(k);
-    catalog.products.push({ id: nextCatId(), name: i.name, cost: Number(i.cost) || 0, costText: i.costText || '', margin: null });
+    catalog.products.push({ id: nextCatId(), name: i.name, cost: Number(i.cost) || 0, costText: i.costText || '', price: null, priceText: '', margin: null });
     added++;
   }));
   if (added) { saveCatalog(); fillCatNamesDatalist(); }
@@ -608,22 +620,22 @@ function getFiltered() {
 function renderStats() {
   const totalIn = transactions.filter(t => t.type === 'ingreso').reduce((s,t) => s + Number(t.amount), 0);
   const totalOut = transactions.filter(t => t.type === 'gasto').reduce((s,t) => s + Number(t.amount), 0);
-  const totalCost = transactions.filter(t => t.type === 'ingreso').reduce((s,t) => s + (Number(t.cost) || 0), 0);
+  const invValue0 = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0), 0);
+  const totalCost = invValue0;
   const gain = totalIn - totalCost;
   const now = new Date();
   const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const monthIn = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
   const monthOut = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
   const cash = totalIn - totalOut;
-  const invValue = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0), 0);
-  const defM = Number(catalog.margin) || 0;
+  const invValue = invValue0;
   const projInv = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => {
       const un = Number(i.units) || 0;
+      if (!un) return a;
       const c = Number(i.cost) || 0;
-      if (!un || !c) return a;
       const p = catalog.products.find(x => (x.name || '').toLowerCase() === (i.name || '').toLowerCase());
-      const m = (p && p.margin !== null && p.margin !== undefined) ? (Number(p.margin) || 0) : defM;
-      return a + c * un * (1 + m / 100);
+      const unit = catSalePrice(p) || c;
+      return a + unit * un;
     }, 0), 0);
   const currentTotal = cash + invValue;
   const projected = cash + projInv;
@@ -635,7 +647,7 @@ function renderStats() {
   `;
   document.getElementById('stats').innerHTML = `
     <div class="stat-card"><h3>Ingresos totales</h3><p class="c-green">${formatMoney(totalIn)}</p></div>
-    <div class="stat-card"><h3>Costos de productos</h3><p class="c-red">${formatMoney(totalCost)}</p></div>
+    <div class="stat-card"><h3>Costos de productos</h3><p class="c-red">${formatMoney(totalCost)}</p><div class="sub">Costo del inventario actual</div></div>
     <div class="stat-card"><h3>Ganancia neta</h3><p class="${gain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gain)}</p></div>
     <div class="stat-card"><h3>Gastos totales</h3><p class="c-red">${formatMoney(totalOut)}</p></div>
     <div class="stat-card"><h3>Este mes</h3><p class="c-white">${formatMoney(monthIn - monthOut)}</p></div>
@@ -662,10 +674,11 @@ function renderHistory() {
           const dLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : t.date;
           const item = getItemInLot(t.lotId, t.itemId);
           const prod = item ? item.name : '';
+          const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
           return `<tr>
             <td>${dLabel}</td>
             <td><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
-            <td>${t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : '—'}</td>
+            <td>${t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—')}</td>
             <td>${escapeHtml(t.category || '-')}</td>
             <td>${escapeHtml(t.desc || '-')}</td>
             <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
@@ -910,14 +923,33 @@ function toggleCostField() {
   const isIncome = document.getElementById('editType').value === 'ingreso';
   document.getElementById('lotGroup').style.display = isIncome ? 'block' : 'none';
   document.getElementById('itemGroup').style.display = isIncome ? 'block' : 'none';
-  document.getElementById('costGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('gastoLinkGroup').style.display = isIncome ? 'none' : 'block';
   if (!isIncome) {
     document.getElementById('qtyGroup').style.display = 'none';
     document.getElementById('itemCostHint').textContent = '';
     document.getElementById('suggestGroup').style.display = 'none';
     document.getElementById('gainHint').textContent = '';
   }
-  if (isIncome) onItemQtyChange();
+  if (isIncome) {
+    fillLotSelect(Number(document.getElementById('editLot').value) || null, true);
+    onLotChange();
+  }
+}
+
+function onGastoLinkChange() {
+  const v = document.getElementById('editGastoLink').value;
+  const isEx = v === 'existing';
+  document.getElementById('existingLotGroup').style.display = isEx ? 'block' : 'none';
+  if (isEx) fillGastoLotSelect(Number(document.getElementById('editGastoLot').value) || null);
+}
+
+function fillGastoLotSelect(selected) {
+  const sel = document.getElementById('editGastoLot');
+  let opts = '<option value="">Elige el lote</option>';
+  lots.forEach(l => {
+    opts += `<option value="${l.id}" ${Number(selected) === l.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`;
+  });
+  sel.innerHTML = opts;
 }
 
 function suggestedFor() {
@@ -925,12 +957,11 @@ function suggestedFor() {
   const itemId = Number(document.getElementById('editItem').value) || null;
   const item = getItemInLot(lotId, itemId);
   const qty = parseInt(document.getElementById('editQty').value) || 0;
-  if (!item) return { item: null, value: 0, margin: 0 };
-  const defM = Number(catalog.margin) || 0;
+  if (!item) return { item: null, value: 0 };
   const p = catalog.products.find(c => (c.name || '').toLowerCase() === (item.name || '').toLowerCase());
-  const margin = (p && p.margin !== null && p.margin !== undefined) ? (Number(p.margin) || 0) : defM;
-  const value = Math.round((Number(item.cost) || 0) * qty * (1 + margin / 100) * 100) / 100;
-  return { item, value, margin };
+  const unitPrice = catSalePrice(p) || (Number(item.cost) || 0);
+  const value = Math.round(unitPrice * qty * 100) / 100;
+  return { item, value, unitPrice };
 }
 
 function useSuggested() {
@@ -957,9 +988,9 @@ function updateGainHint() {
   }
 }
 
-function fillLotSelect(selected) {
+function fillLotSelect(selected, force) {
   const sel = document.getElementById('editLot');
-  let opts = '<option value="">Sin lote</option>';
+  let opts = force ? '' : '<option value="">Sin lote</option>';
   lots.forEach(l => {
     const totalUnits = (l.items || []).reduce((s,i) => s + (Number(i.units) || 0), 0);
     if (totalUnits > 0 || Number(selected) === l.id) {
@@ -1002,13 +1033,9 @@ function onItemQtyChange() {
   qtyGroup.style.display = item ? 'block' : 'none';
   if (item) {
     hint.textContent = 'Costo por unidad: ' + formatMoney(item.cost) + ' · Disponibles: ' + item.units;
-    if (document.getElementById('costAuto').value === 'si' || !document.getElementById('editCost').value) {
-      document.getElementById('editCost').value = formatEditValue((item.cost || 0) * qty);
-      document.getElementById('costAuto').value = 'si';
-    }
     const s = suggestedFor();
     document.getElementById('suggestGroup').style.display = 'block';
-    document.getElementById('suggestHint').textContent = 'Precio sugerido (margen ' + (s.margin || 0) + '%): ' + formatMoney(s.value);
+    document.getElementById('suggestHint').textContent = 'Precio de venta (' + formatMoney(s.unitPrice) + ' por unidad): ' + formatMoney(s.value);
     const amt = document.getElementById('editAmount');
     if (!amt.value) amt.value = formatEditValue(s.value);
   } else {
@@ -1029,8 +1056,6 @@ function openModal(id = null) {
     document.getElementById('editId').value = existing.id;
     document.getElementById('editType').value = existing.type;
     document.getElementById('editAmount').value = formatEditValue(existing.amount);
-    document.getElementById('editCost').value = existing.cost ? formatEditValue(existing.cost) : '';
-    document.getElementById('costAuto').value = 'no';
     document.getElementById('editQty').value = existing.qty || 1;
     document.getElementById('editLot').value = existing.lotId || '';
     document.getElementById('editItem').value = existing.itemId || '';
@@ -1038,12 +1063,12 @@ function openModal(id = null) {
     document.getElementById('editDesc').value = existing.desc || '';
     document.getElementById('editDate').value = existing.date || todayStr();
     document.getElementById('deleteBtn').style.display = 'inline-block';
+    document.getElementById('editGastoLink').value = existing.lotId ? 'existing' : '';
+    document.getElementById('editGastoLot').value = existing.lotId || '';
   } else {
     document.getElementById('editId').value = '';
     document.getElementById('editType').value = 'gasto';
     document.getElementById('editAmount').value = '';
-    document.getElementById('editCost').value = '';
-    document.getElementById('costAuto').value = 'si';
     document.getElementById('editQty').value = '1';
     document.getElementById('editLot').value = '';
     document.getElementById('editItem').value = '';
@@ -1051,8 +1076,11 @@ function openModal(id = null) {
     document.getElementById('editDesc').value = '';
     document.getElementById('editDate').value = todayStr();
     document.getElementById('deleteBtn').style.display = 'none';
+    document.getElementById('editGastoLink').value = '';
+    document.getElementById('editGastoLot').value = '';
   }
   toggleCostField();
+  onGastoLinkChange();
   onLotChange();
   document.getElementById('modalOverlay').classList.add('active');
 }
@@ -1076,19 +1104,31 @@ function saveTransaction() {
   const lotId = type === 'ingreso' ? Number(document.getElementById('editLot').value) || null : null;
   const itemId = type === 'ingreso' ? Number(document.getElementById('editItem').value) || null : null;
   const qty = type === 'ingreso' ? (parseInt(document.getElementById('editQty').value) || 0) : 0;
-  let cost = type === 'ingreso' ? parseAmount(document.getElementById('editCost').value) : 0;
+  let cost = 0;
   const category = document.getElementById('editCategory').value.trim();
   const desc = document.getElementById('editDesc').value.trim();
   const date = document.getElementById('editDate').value || todayStr();
   if (amount <= 0) { showToast('Ingresa un monto válido', true); return; }
-  if (lotId) {
+  if (type === 'ingreso') {
+    if (!lotId) { showToast('Selecciona a qué lote pertenece la venta', true); return; }
     const item = getItemInLot(lotId, itemId);
-    if (!item) { showToast('Selecciona el producto del lote', true); return; }
+    if (!item) { showToast('Selecciona el producto vendido', true); return; }
     if (qty <= 0) { showToast('Ingresa las unidades vendidas', true); return; }
     if (qty > (Number(item.units) || 0)) { showToast('No hay suficientes unidades del producto', true); return; }
-    cost = cost || (item.cost || 0) * qty;
+    cost = (item.cost || 0) * qty;
   }
   const id = document.getElementById('editId').value;
+  let linkNewLot = false;
+  if (type === 'gasto') {
+    const gl = document.getElementById('editGastoLink').value;
+    if (gl === 'existing') {
+      const glotId = Number(document.getElementById('editGastoLot').value) || null;
+      if (!glotId) { showToast('Elige el lote existente al que va la compra', true); return; }
+      lotId = glotId;
+    } else if (gl === 'new') {
+      linkNewLot = true;
+    }
+  }
   const data = { type, amount, cost: type === 'ingreso' ? cost : 0, lotId, itemId, qty, category, desc, date };
   if (id) {
     const idx = transactions.findIndex(t => t.id === Number(id));
@@ -1106,6 +1146,13 @@ function saveTransaction() {
   render();
   closeModal();
   showToast(id ? 'Movimiento actualizado' : 'Movimiento registrado');
+  if (linkNewLot) {
+    pendingGastoLotTxId = id ? Number(id) : data.id;
+    openLotModal();
+    const nm = (desc || category).trim();
+    if (nm) document.getElementById('editLotName').value = nm;
+    document.getElementById('editLotDate').value = date;
+  }
 }
 
 function deleteTransaction(id) {
@@ -1210,6 +1257,7 @@ function openLotModal(id = null) {
 }
 
 function closeLotModal() {
+  pendingGastoLotTxId = null;
   document.getElementById('lotModalOverlay').classList.remove('active');
 }
 
@@ -1230,13 +1278,20 @@ function saveLot() {
   if (!items.length) { showToast('Agrega al menos un producto al lote', true); return; }
   const dupes = [...new Set(items.map(i => i.name))].filter(n => items.filter(i => i.name === n).length > 1);
   const id = document.getElementById('editLotId').value;
+  let targetId = null;
   if (id) {
     const idx = lots.findIndex(l => l.id === Number(id));
-    if (idx !== -1) lots[idx] = { ...lots[idx], name, date, items };
+    if (idx !== -1) { lots[idx] = { ...lots[idx], name, date, items }; targetId = Number(id); }
   } else {
-    lots.push({ id: getNextId(lots), name, date, items });
+    targetId = getNextId(lots);
+    lots.push({ id: targetId, name, date, items });
   }
   saveLots();
+  if (pendingGastoLotTxId) {
+    const tx = transactions.find(t => t.id === pendingGastoLotTxId);
+    if (tx) { tx.lotId = targetId; saveTx(); }
+    pendingGastoLotTxId = null;
+  }
   syncCatalogFromLots();
   render();
   closeLotModal();
@@ -1367,32 +1422,21 @@ function onLotItemNameInput(el) {
   }
 }
 
-function setDefaultMargin(v) {
-  catalog.margin = Number(v) || 0;
-  saveCatalog();
-  render();
-  showToast('Margen por defecto: ' + catalog.margin + '%');
-}
-
 function renderCatalog() {
-  const defM = Number(catalog.margin) || 0;
-  const mInput = document.getElementById('catMargin');
-  if (mInput) mInput.value = defM;
   const tbody = document.getElementById('catalogTable');
   if (!catalog.products.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Sin productos en el catálogo. Agrega el primero con el botón + Agregar producto.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Sin productos en el catálogo. Agrega el primero con el botón + Agregar producto.</td></tr>';
     return;
   }
   tbody.innerHTML = catalog.products.map(p => {
-    const m = (p.margin === null || p.margin === undefined) ? defM : (Number(p.margin) || 0);
-    const sugg = (Number(p.cost) || 0) * (1 + m / 100);
+    const price = catSalePrice(p);
+    const gain = price != null ? price - (Number(p.cost) || 0) : null;
     return `
       <tr>
         <td>${escapeHtml(p.name)}</td>
         <td>${formatMoney(p.cost)}</td>
-        <td>${(p.margin === null || p.margin === undefined) ? m + '% (def.)' : m + '%'}</td>
-        <td class="c-green">${formatMoney(sugg)}</td>
-        <td class="c-green">+${formatMoney(sugg - p.cost)}</td>
+        <td class="c-green">${price != null ? formatMoney(price) : '<span style="color:#777">Pon el precio</span>'}</td>
+        <td class="c-green">${gain != null ? '+' + formatMoney(gain) : '<span style="color:#777">—</span>'}</td>
         <td class="admin-only"><div class="td-actions">
           <button class="btn btn-secondary btn-sm admin-only" onclick="openCatModal(${p.id})">Editar</button>
           <button class="btn btn-danger btn-sm admin-only" onclick="deleteCatProduct(${p.id})">Eliminar</button>
@@ -1407,7 +1451,7 @@ function openCatModal(id = null) {
   document.getElementById('editCatId').value = p ? p.id : '';
   document.getElementById('editCatName').value = p ? p.name : '';
   document.getElementById('editCatCost').value = p ? (p.costText || formatEditValue(p.cost)) : '';
-  document.getElementById('editCatMargin').value = (p && p.margin !== null && p.margin !== undefined) ? p.margin : '';
+  document.getElementById('editCatPrice').value = p ? (p.priceText || (p.price != null ? formatEditValue(p.price) : '')) : '';
   document.getElementById('deleteCatBtn').style.display = p ? 'inline-block' : 'none';
   document.getElementById('catOverlay').classList.add('active');
   document.getElementById('editCatName').focus();
@@ -1422,14 +1466,15 @@ function saveCatProduct() {
   if (!name) { showToast('El nombre es obligatorio', true); return; }
   const cost = parseAmount(document.getElementById('editCatCost').value);
   const costText = document.getElementById('editCatCost').value.trim();
-  const marginStr = document.getElementById('editCatMargin').value.trim();
-  const margin = marginStr === '' ? null : (Number(marginStr) || 0);
+  const priceRaw = document.getElementById('editCatPrice').value.trim();
+  const price = priceRaw === '' ? null : parseAmount(priceRaw);
+  const priceText = priceRaw;
   const id = document.getElementById('editCatId').value;
   if (id) {
     const p = catalog.products.find(x => x.id === Number(id));
-    if (p) Object.assign(p, { name, cost, costText, margin });
+    if (p) Object.assign(p, { name, cost, costText, price, priceText });
   } else {
-    catalog.products.push({ id: nextCatId(), name, cost, costText, margin });
+    catalog.products.push({ id: nextCatId(), name, cost, costText, price, priceText, margin: null });
   }
   saveCatalog();
   render();
