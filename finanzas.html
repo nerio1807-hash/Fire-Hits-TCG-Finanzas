@@ -557,7 +557,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v5';
+const BUILD_VERSION = '2026-09-05-preventas-v6';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -716,17 +716,28 @@ function loadPreventas() {
 }
 
 function normalizePreventas(arr) {
-  return arr.map(p => ({
-    id: Number(p.id) || 0,
-    client: (p.client || '').trim(),
-    products: (p.products || '').trim(),
-    total: Number(p.total) || 0,
-    p1: Number(p.p1) || 0,
-    p2: Number(p.p2) || 0,
-    status: p.status === 'delivered' ? 'delivered' : 'pending',
-    notes: (p.notes || '').trim(),
-    date: p.date || ''
-  })).filter(p => p.id);
+  return arr.map(p => {
+    const p1 = Number(p.p1) || 0;
+    const p2 = Number(p.p2) || 0;
+    const total = Number(p.total) || 0;
+    let pay = p.pay;
+    if (!['none', 'seal', 'full'].includes(pay)) {
+      pay = p1 <= 0 ? 'none' : (p2 > 0 && p1 < total) ? 'seal' : 'full';
+    }
+    return {
+      id: Number(p.id) || 0,
+      client: (p.client || '').trim(),
+      products: (p.products || '').trim(),
+      total: total,
+      p1: p1,
+      p2: p2,
+      pay: pay,
+      status: p.status === 'delivered' ? 'delivered' : 'pending',
+      notes: (p.notes || '').trim(),
+      date: p.date || '',
+      lines: (Array.isArray(p.lines) ? p.lines.map(l => ({ lotId: Number(l.lotId) || null, itemId: Number(l.itemId) || null, qty: parseInt(l.qty) || 1, price: (l.price != null && l.price !== '') ? Number(l.price) : null })) : [])
+    };
+  }).filter(p => p.id);
 }
 
 function savePreventas() {
@@ -1854,16 +1865,22 @@ function deleteLotFromModal() {
   }
 }
 
+function prevPendiente(p) {
+  return Math.max(0, (Number(p.total) || 0) - (Number(p.p1) || 0));
+}
+
 function renderPrevStats() {
-  const pendingPay = preventas.filter(p => (p.total - p.p1 - p.p2) > 0);
-  const porCobrar = pendingPay.reduce((s,p) => s + (p.total - p.p1 - p.p2), 0);
-  const porEntregar = preventas.filter(p => p.status === 'pending').length;
+  const pends = preventas.map(p => prevPendiente(p));
+  let porCobrar = 0;
+  for (let i = 0; i < preventas.length; i++) if (pends[i] > 0) porCobrar += pends[i];
+  const conSaldo = pends.filter(x => x > 0).length;
+  const porEntregar = preventas.filter(p => p.status !== 'delivered').length;
   const entregados = preventas.filter(p => p.status === 'delivered').length;
   const wrap = document.getElementById('prevStats');
   if (!wrap) return;
   wrap.innerHTML = `
     <div class="stat-card"><h3>Clientes en preventa</h3><p class="big c-white">${preventas.length}</p><div class="sub">Total de preventas registradas</div></div>
-    <div class="stat-card"><h3>Por cobrar</h3><p class="big c-green">${formatMoney(porCobrar)}</p><div class="sub">${pendingPay.length} cliente(s) con saldo pendiente</div></div>
+    <div class="stat-card"><h3>Por cobrar</h3><p class="big c-green">${formatMoney(porCobrar)}</p><div class="sub">${conSaldo} cliente(s) con saldo pendiente</div></div>
     <div class="stat-card"><h3>Por entregar</h3><p class="big c-white">${porEntregar}</p><div class="sub">${porEntregar} preventa(s) sin entregar</div></div>
     <div class="stat-card"><h3>Entregado</h3><p class="big c-white">${entregados}</p><div class="sub">Preventas ya entregadas</div></div>
   `;
@@ -1881,12 +1898,13 @@ function renderPreventas() {
   wrap.innerHTML = `
     <table>
       <thead>
-        <tr><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Seña</th><th>Resto</th><th>Saldo</th><th>Estado de pago</th><th>Entrega</th><th>Notas</th><th></th></tr>
+        <tr><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Pagado</th><th>Saldo pendiente</th><th>Estado de pago</th><th>Entrega</th><th>Notas</th><th></th></tr>
       </thead>
       <tbody>
         ${sorted.map(p => {
-          const saldo = (Number(p.total)||0) - (Number(p.p1)||0) - (Number(p.p2)||0);
-          const paid = saldo <= 0;
+          const p1 = Number(p.p1) || 0;
+          const pend = prevPendiente(p);
+          const paid = pend <= 0;
           const dParts = (p.date || '').split('-');
           const dLabel = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : '—';
           return `<tr>
@@ -1894,10 +1912,9 @@ function renderPreventas() {
             <td><b>${escapeHtml(p.client) || '—'}</b></td>
             <td style="white-space:pre-line;">${escapeHtml(preventaProductsText(p)) || '—'}</td>
             <td>${formatMoney(p.total)}</td>
-            <td>${formatMoney(p.p1)}</td>
-            <td>${formatMoney(p.p2)}</td>
-            <td class="${saldo > 0 ? 'c-red' : 'c-green'}">${saldo > 0 ? formatMoney(saldo) : '—'}</td>
-            <td>${paid ? '<span class="badge badge-ok">Pagado</span>' : (Number(p.p1) > 0 ? '<span class="badge badge-warn">Seña</span>' : '<span class="badge badge-gasto">Sin pago</span>')}</td>
+            <td>${formatMoney(p1)}</td>
+            <td class="${pend > 0 ? 'c-red' : 'c-green'}">${pend > 0 ? formatMoney(pend) : '—'}</td>
+            <td>${paid ? '<span class="badge badge-ok">Pagado</span>' : (p1 > 0 ? '<span class="badge badge-warn">Seña</span>' : '<span class="badge badge-gasto">Sin pago</span>')}</td>
             <td>${p.status === 'delivered' ? '<span class="badge badge-ok">Entregado</span>' : '<span class="badge badge-warn">Por entregar</span>'}</td>
             <td>${escapeHtml(p.notes) || '—'}</td>
             <td class="admin-only"><div class="td-actions">
@@ -2103,12 +2120,22 @@ function openPrevModal(id = null) {
     prevProdLines = (p && Array.isArray(p.lines) ? p.lines.map(l => ({ lotId: l.lotId, itemId: l.itemId, qty: l.qty || 1, price: l.price != null ? l.price : null })) : []);
     document.getElementById('editPrevTotal').value = p ? formatEditValue(p.total) : '';
     const paySel = document.getElementById('editPrevPay');
-    if (!p || (!p.p1 && !p.p2)) paySel.value = 'none';
-    else if ((Number(p.p2) || 0) <= 0 && (Number(p.p1) || 0) > 0) paySel.value = 'full';
-    else paySel.value = 'seal';
+    if (!p) { paySel.value = 'none'; }
+    else {
+      const p1 = Number(p.p1) || 0;
+      const p2 = Number(p.p2) || 0;
+      const total = Number(p.total) || 0;
+      let pay = p.pay;
+      if (!pay || !['none','seal','full'].includes(pay)) {
+        pay = (p1 <= 0) ? 'none' : (p2 > 0 && p1 < total) ? 'seal' : 'full';
+      }
+      paySel.value = pay;
+    }
     const p1raw = document.getElementById('editPrevP1');
-    if (p && paySel.value === 'seal') { p1raw.value = formatEditValue(p.p1); }
+    if (p && (Number(p.p1) || 0) > 0 && paySel.value !== 'none') p1raw.value = formatEditValue(p.p1);
     else p1raw.value = '';
+    const sumLines = (p && Array.isArray(p.lines)) ? p.lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 1), 0) : 0;
+    if (p && Math.abs(sumLines - (Number(p.total) || 0)) < 0.005) prevTotalAuto = formatEditValue(p.total);
     renderPrevProds();
     if (p && p.lines) { recalcPrevProds(); }
     prevPayUI();
@@ -2151,7 +2178,7 @@ function savePreventa() {
     else { p1 = 0; p2 = Math.max(0, total); }
     if (!total && total !== 0) { showToast('Escribe el total a pagar o añade productos para calcularlo', true); return; }
     const products = preventaProductsText({ lines: prevProdLines });
-    const data = { client, lines: prevProdLines.map(l => ({ ...l })), products, total, p1, p2, status, notes, date: (id ? (preventas.find(x => x.id === Number(id)) || {}).date : '') || todayStr() };
+    const data = { client, lines: prevProdLines.map(l => ({ ...l })), products, total, p1, p2, pay, status, notes, date: (id ? (preventas.find(x => x.id === Number(id)) || {}).date : '') || todayStr() };
     if (id) {
       const idx = preventas.findIndex(x => x.id === Number(id));
       if (idx !== -1) preventas[idx] = { ...preventas[idx], ...data, id: Number(id) };
