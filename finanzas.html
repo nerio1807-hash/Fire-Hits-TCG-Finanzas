@@ -37,6 +37,10 @@ header h1 span { color: #e63946; }
 .stat-card { background: #1a1a2e; padding: 1rem 1.5rem; border-radius: 12px; border: 1px solid #2a2a4a; flex: 1; min-width: 150px; }
 .stat-card h3 { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
 .stat-card p { font-size: 1.4rem; font-weight: 700; margin-top: 0.25rem; }
+.cash-banner { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.cash-banner .stat-card { border: 1px solid #e63946; background: linear-gradient(135deg, #1a1a2e, #2a1420); flex: 1; min-width: 210px; }
+.cash-banner .big { font-size: 2.1rem; line-height: 1.1; }
+.cash-banner .sub { font-size: 0.75rem; color: #888; margin-top: 0.35rem; }
 .c-green { color: #95d5b2 !important; }
 .c-red { color: #e63946 !important; }
 .c-white { color: #fff !important; }
@@ -166,6 +170,8 @@ body.public .admin-only { display: none !important; }
         </label>
       </div>
     </div>
+
+    <div class="cash-banner" id="cashBanner"></div>
 
     <div class="stats" id="stats"></div>
 
@@ -565,8 +571,15 @@ function renderStats() {
   const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const monthIn = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
   const monthOut = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
+  const cash = totalIn - totalOut;
+  const invValue = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0), 0);
+  const netWorth = cash + invValue;
+  document.getElementById('cashBanner').innerHTML = `
+    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">Ingresos ${formatMoney(totalIn)} − Gastos ${formatMoney(totalOut)}</div></div>
+    <div class="stat-card"><h3>Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que tienes en productos sin vender</div></div>
+    <div class="stat-card"><h3>Total del negocio</h3><p class="big ${netWorth >= 0 ? 'c-green' : 'c-red'}">${formatMoney(netWorth)}</p><div class="sub">Caja + inventario (lo que tendrías al vender todo)</div></div>
+  `;
   document.getElementById('stats').innerHTML = `
-    <div class="stat-card"><h3>Balance total</h3><p class="${totalIn-totalOut >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalIn-totalOut)}</p></div>
     <div class="stat-card"><h3>Ingresos totales</h3><p class="c-green">${formatMoney(totalIn)}</p></div>
     <div class="stat-card"><h3>Costos de productos</h3><p class="c-red">${formatMoney(totalCost)}</p></div>
     <div class="stat-card"><h3>Ganancia neta</h3><p class="${gain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gain)}</p></div>
