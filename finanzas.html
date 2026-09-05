@@ -313,6 +313,23 @@ body.public .admin-only { display: none !important; }
         <span>Es un pedido / encargo por adelantado (solo dinero, no descuenta inventario)</span>
       </label>
     </div>
+    <div class="form-group" id="preventaPayGroup" style="display:none;">
+      <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
+        <input type="checkbox" id="preventaPayMode" onchange="onPreventaPayToggle()" style="margin:0;">
+        <span>Es el pago de una preventa (descuenta inventario y registra el ingreso)</span>
+      </label>
+      <div class="form-group" id="preventaPaySelGroup" style="display:none; margin-top:0.5rem;">
+        <label>¿De qué preventa es el pago?</label>
+        <select id="editPreventaPaySel" onchange="onPreventaPaySelChange()"></select>
+        <div class="form-hint" id="preventaPayHint"></div>
+      </div>
+      <div class="form-group" id="preventaPayAmtGroup" style="display:none; margin-top:0.5rem;">
+        <label>¿Cuánto pagó ahora?</label>
+        <select id="editPreventaPayAmt" onchange="onPreventaPayAmtChange()">
+          <option value="">Selecciona la preventa primero...</option>
+        </select>
+      </div>
+    </div>
     <div class="form-group" id="lotGroup">
       <label>Lote</label>
       <select id="editLot" onchange="onLotChange()"></select>
@@ -559,7 +576,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v7';
+const BUILD_VERSION = '2026-09-05-preventas-v9';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1246,15 +1263,27 @@ function fillCategories() {
 function toggleCostField() {
   const isIncome = document.getElementById('editType').value === 'ingreso';
   const pedido = isIncome && document.getElementById('pedidoMode').checked;
-  const multi = isIncome && !pedido && document.getElementById('multiSaleMode').checked;
-  document.getElementById('pedidoGroup').style.display = isIncome ? 'block' : 'none';
-  document.getElementById('lotGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
-  document.getElementById('itemGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
-  document.getElementById('discountGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
+  const prevPay = isIncome && document.getElementById('preventaPayMode').checked;
+  const multi = isIncome && !pedido && !prevPay && document.getElementById('multiSaleMode').checked;
+  document.getElementById('pedidoGroup').style.display = (isIncome && !prevPay) ? 'block' : 'none';
+  document.getElementById('preventaPayGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('lotGroup').style.display = (isIncome && !multi && !pedido && !prevPay) ? 'block' : 'none';
+  document.getElementById('itemGroup').style.display = (isIncome && !multi && !pedido && !prevPay) ? 'block' : 'none';
+  document.getElementById('discountGroup').style.display = (isIncome && !multi && !pedido && !prevPay) ? 'block' : 'none';
   document.getElementById('gastoLinkGroup').style.display = isIncome ? 'none' : 'block';
-  document.getElementById('multiModeGroup').style.display = (isIncome && !pedido) ? 'block' : 'none';
+  document.getElementById('multiModeGroup').style.display = (isIncome && !pedido && !prevPay) ? 'block' : 'none';
   document.getElementById('multiSaleGroup').style.display = multi ? 'block' : 'none';
-  if (multi) {
+  if (prevPay) {
+    document.getElementById('qtyGroup').style.display = 'none';
+    document.getElementById('itemCostHint').textContent = '';
+    document.getElementById('suggestGroup').style.display = 'none';
+    document.getElementById('gainHint').textContent = '';
+    document.getElementById('preventaPaySelGroup').style.display = prevPay ? 'block' : 'none';
+    document.getElementById('preventaPayAmtGroup').style.display = prevPay ? 'block' : 'none';
+    fillPreventaPaySel();
+    onPreventaPaySelChange();
+    document.getElementById('editCategory').placeholder = 'Se pondrá "Preventa" solo';
+  } else if (multi) {
     document.getElementById('qtyGroup').style.display = 'none';
     document.getElementById('itemCostHint').textContent = '';
     document.getElementById('suggestGroup').style.display = 'none';
@@ -1268,6 +1297,7 @@ function toggleCostField() {
     document.getElementById('editCategory').placeholder = 'Escribe o elige...';
     if (!document.getElementById('editCategory').value) document.getElementById('editCategory').value = 'Pedido';
   } else if (isIncome) {
+    document.getElementById('qtyGroup').style.display = 'block';
     fillLotSelect(Number(document.getElementById('editLot').value) || null, true);
     onLotChange();
   } else {
@@ -1276,12 +1306,127 @@ function toggleCostField() {
     document.getElementById('suggestGroup').style.display = 'none';
     document.getElementById('gainHint').textContent = '';
   }
-  if (isIncome) updateGainHint();
+  if (isIncome && !prevPay) updateGainHint();
+}
+
+function onPreventaPayToggle() {
+  if (document.getElementById('preventaPayMode').checked) {
+    document.getElementById('pedidoMode').checked = false;
+    document.getElementById('multiSaleMode').checked = false;
+    multiSaleLines = [];
+  }
+  toggleCostField();
+}
+
+function getPayablePreventas() {
+  const pagadas = new Set(transactions.filter(t => t.preventaId).map(t => t.preventaId));
+  return preventas.filter(p => {
+    if (!p || !Array.isArray(p.lines) || !p.lines.length) return false;
+    if (pagadas.has(p.id)) return false;
+    if (prevPendiente(p) <= 0) return false;
+    const lot = getLot(p.lines[0].lotId);
+    return !!lot;
+  });
+}
+
+function registerPreventaPayment(p, frac, date) {
+  if (!p || !Array.isArray(p.lines) || !p.lines.length) return { error: 'Esa preventa no tiene productos para descontar del inventario' };
+  if (transactions.some(t => t.preventaId === p.id)) return { error: 'Esa preventa ya tiene su pago registrado (el inventario ya salió)' };
+  const collected = Math.round((Number(p.total) || 0) * frac * 100) / 100;
+  if (collected <= 0) return { error: 'El monto del pago debe ser mayor a 0' };
+  const rowsTotal = p.lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
+  const evts = [];
+  let unitsOut = 0;
+  for (const l of p.lines) {
+    const item = getItemInLot(l.lotId, l.itemId);
+    if (!item) return { error: 'Un producto de la preventa ya no existe en su lote' };
+    const qty = parseInt(l.qty) || 1;
+    if (qty <= 0) return { error: 'La preventa tiene unidades inválidas' };
+    if (qty > (Number(item.units) || 0)) return { error: 'No hay suficientes unidades de "' + item.name + '" en inventario' };
+    const lineTotal = (Number(l.price) || 0) * qty;
+    const share = rowsTotal > 0 ? (lineTotal / rowsTotal) : (1 / p.lines.length);
+    const lineAmount = Math.round(collected * share * 100) / 100;
+    evts.push({ type: 'ingreso', amount: lineAmount, cost: (Number(item.cost) || 0) * qty, discount: 0, lotId: l.lotId, itemId: l.itemId, qty, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id });
+    unitsOut += qty;
+  }
+  if (!evts.length) return { error: 'La preventa no tiene productos válidos' };
+  let total = 0;
+  evts.forEach(e => { e.id = getNextId(transactions); transactions.push(e); adjustStock(e, -1); total += Number(e.amount) || 0; });
+  p.p1 = frac >= 1 ? Number(p.total) : Math.round((Number(p.total) || 0) * 50) / 100;
+  p.p2 = prevPendiente(p);
+  p.pay = frac >= 1 ? 'full' : 'seal';
+  savePreventas();
+  saveTx();
+  render();
+  return { total, unitsOut };
+}
+
+function cobrarPreventa(id) {
+  const p = preventas.find(x => x.id === Number(id));
+  if (!p) { showToast('Esa preventa ya no existe', true); return; }
+  if (transactions.some(t => t.preventaId === p.id)) { showToast('Esa preventa ya tiene su pago registrado (el inventario ya salió)', true); return; }
+  const r = window.prompt('¿Cuánto pagó ' + (p.client || 'este cliente') + ' ahora?\n\n1 = Primera parte (50%) = ' + formatMoney(Math.round((Number(p.total) || 0) * 50) / 100) + '\n2 = Pago completo (100%) = ' + formatMoney(p.total) + '\n\nEscribí 1 o 2', '1');
+  if (r === null) return;
+  const s = String(r).trim();
+  const frac = (s === '2' || s === '100' || s.toLowerCase() === 'completo') ? 1 : (s === '1' || s === '50' || s.toLowerCase() === 'parte') ? 0.5 : null;
+  if (!frac) { showToast('Escribí 1 para la primera parte (50%) o 2 para el pago completo, o tocá Cancelar', true); return; }
+  const res = registerPreventaPayment(p, frac, todayStr());
+  if (res.error) { showToast(res.error, true); return; }
+  showToast('Cobro a ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + ' · ' + res.unitsOut + ' producto(s) salieron del inventario' + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+}
+
+function fillPreventaPaySel() {
+  const sel = document.getElementById('editPreventaPaySel');
+  const payable = getPayablePreventas();
+  let opts = '<option value="">— Elige la preventa —</option>';
+  payable.forEach(p => {
+    opts += '<option value="' + p.id + '">' + escapeHtml(p.client || 'Sin cliente') + ' · ' + formatMoney(p.total) + ' (' + p.lines.reduce((s, l) => s + (Number(l.qty) || 1), 0) + ' und)</option>';
+  });
+  sel.innerHTML = opts;
+  sel.value = '';
+}
+
+function onPreventaPaySelChange() {
+  const sel = document.getElementById('editPreventaPaySel');
+  const amt = document.getElementById('editPreventaPayAmt');
+  const hint = document.getElementById('preventaPayHint');
+  const p = preventas.find(x => x.id === Number(sel.value));
+  if (!p) {
+    amt.innerHTML = '<option value="">Selecciona la preventa primero...</option>';
+    hint.textContent = getPayablePreventas().length ? '' : 'No hay preventas con productos y saldo pendiente para cobrar.';
+    document.getElementById('preventaPayAmtGroup').style.display = 'block';
+    return;
+  }
+  const pend = prevPendiente(p);
+  const half = Math.round((Number(p.total) || 0) * 50) / 100;
+  const full = Number(p.total) || 0;
+  amt.innerHTML = '<option value="">¿Cuánto pagó?</option>' +
+    '<option value="50"' + (half <= 0 && pend <= 0 ? ' disabled' : '') + '>Primera parte (50%) · ' + formatMoney(half) + '</option>' +
+    '<option value="100"' + (full <= 0 ? ' disabled' : '') + '>Pago completo (100%) · ' + formatMoney(full) + '</option>';
+  amt.value = '';
+  hint.textContent = p.client + ' · Total del pedido ' + formatMoney(p.total) + ' · Todavía queda por cobrar ' + formatMoney(pend);
+  onPreventaPayAmtChange();
+}
+
+function onPreventaPayAmtChange() {
+  const sel = document.getElementById('editPreventaPaySel');
+  const amt = document.getElementById('editPreventaPayAmt').value;
+  const p = preventas.find(x => x.id === Number(sel.value));
+  if (!p) return;
+  const frac = amt === '100' ? 1 : amt === '50' ? 0.5 : 0;
+  if (frac) {
+    document.getElementById('editAmount').value = formatEditValue(Math.round((Number(p.total) || 0) * frac * 100) / 100);
+    document.getElementById('editCategory').value = 'Preventa';
+    document.getElementById('editDesc').value = p.client ? ('Preventa de ' + p.client) : 'Preventa';
+  } else {
+    document.getElementById('editAmount').value = '';
+  }
 }
 
 function onPedidoToggle() {
   if (document.getElementById('pedidoMode').checked) {
     document.getElementById('multiSaleMode').checked = false;
+    document.getElementById('preventaPayMode').checked = false;
     multiSaleLines = [];
   }
   toggleCostField();
@@ -1289,7 +1434,10 @@ function onPedidoToggle() {
 
 function onMultiSaleToggle() {
   if (!document.getElementById('multiSaleMode').checked) multiSaleLines = [];
-  if (document.getElementById('multiSaleMode').checked) document.getElementById('pedidoMode').checked = false;
+  if (document.getElementById('multiSaleMode').checked) {
+    document.getElementById('pedidoMode').checked = false;
+    document.getElementById('preventaPayMode').checked = false;
+  }
   toggleCostField();
 }
 
@@ -1573,6 +1721,7 @@ function openModal(id = null) {
   document.getElementById('editGastoProdQty').value = '1';
   pendingLotFirstItem = null;
   document.getElementById('multiSaleMode').checked = false;
+  document.getElementById('preventaPayMode').checked = false;
   multiSaleLines = [];
   toggleCostField();
   onGastoLinkChange();
@@ -1607,6 +1756,26 @@ function saveTransaction() {
   const desc = document.getElementById('editDesc').value.trim();
   const date = document.getElementById('editDate').value || todayStr();
   const id = document.getElementById('editId').value;
+
+  if (type === 'ingreso' && document.getElementById('preventaPayMode').checked) {
+    try {
+      const psel = document.getElementById('editPreventaPaySel').value;
+      if (!psel) { showToast('Elige la preventa del pago', true); return; }
+      const p = preventas.find(x => x.id === Number(psel));
+      if (!p) { showToast('Esa preventa ya no existe', true); return; }
+      const fracSel = document.getElementById('editPreventaPayAmt').value;
+      const frac = fracSel === '100' ? 1 : fracSel === '50' ? 0.5 : 0;
+      if (!frac) { showToast('Indica si pagó la primera parte (50%) o el pago completo (100%)', true); return; }
+      const res = registerPreventaPayment(p, frac, date);
+      if (res.error) { showToast(res.error, true); return; }
+      closeModal();
+      showToast('Pago de preventa de ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + ' · ' + res.unitsOut + ' producto(s) salieron del inventario' + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+    } catch (err) {
+      if (typeof console !== 'undefined' && console.error) console.error('preventaPay:', err);
+      showToast('Error al registrar el pago de la preventa: ' + ((err && err.message) || err), true);
+    }
+    return;
+  }
 
   if (type === 'ingreso' && !pedido && document.getElementById('multiSaleMode').checked) {
     syncMultiSaleFromDom();
@@ -1923,6 +2092,7 @@ function renderPreventas() {
     return;
   }
   const sorted = [...preventas].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  const pagadas = new Set(transactions.filter(t => t.preventaId).map(t => t.preventaId));
   wrap.innerHTML = `
     <table>
       <thead>
@@ -1946,6 +2116,7 @@ function renderPreventas() {
             <td>${p.status === 'delivered' ? '<span class="badge badge-ok">Entregado</span>' : '<span class="badge badge-warn">Por entregar</span>'}</td>
             <td>${escapeHtml(p.notes) || '—'}</td>
             <td class="admin-only"><div class="td-actions">
+              ${(!pagadas.has(p.id) && pend > 0) ? '<button class="btn btn-primary btn-sm admin-only" onclick="cobrarPreventa(' + p.id + ')" title="Registra el ingreso y descuenta inventario">Cobrar</button>' : ''}
               <button class="btn btn-secondary btn-sm admin-only" onclick="openPrevModal(${p.id})">Editar</button>
               <button class="btn btn-danger btn-sm admin-only" onclick="deletePreventa(${p.id})">Eliminar</button>
             </div></td>
