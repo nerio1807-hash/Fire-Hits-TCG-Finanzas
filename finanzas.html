@@ -1043,6 +1043,8 @@ function removeMultiSaleRow(k) {
 function onMultiLineLotChange(k) {
   syncMultiSaleFromDom();
   multiSaleLines[k].itemId = null;
+  multiSaleLines[k].price = null;
+  multiSaleLines[k].discount = 0;
   renderMultiSaleLines();
 }
 
@@ -1072,7 +1074,6 @@ function lineOptionsFor(lotId, selectedItem) {
 }
 
 function renderMultiSaleLines() {
-  syncMultiSaleFromDom();
   const box = document.getElementById('multiSaleItems');
   if (!multiSaleLines.length) { box.innerHTML = ''; return; }
   box.innerHTML = multiSaleLines.map((ln, k) => `
