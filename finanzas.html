@@ -482,6 +482,7 @@ let cloudWatcher = null;
 let watchStarted = false;
 let pendingGastoLotTxId = null;
 let pendingLotFirstItem = null;
+let txSaveGuard = 0;
 let openBalance = 0;
 let multiSaleLines = [];
 const FALLBACK_CONFIG = {
@@ -1162,14 +1163,10 @@ function addItemToLot(lotId, name, qty, unitCost) {
   if (!lot) return false;
   if (!lot.items) lot.items = [];
   const n = normName(name);
-  const ex = lot.items.find(i => i && i.name && n && normName(i.name) === n);
-  if (ex) {
-    const ou = Number(ex.units) || 0;
-    const oc = Number(ex.cost) || 0;
-    const nu = ou + qty;
-    ex.units = nu;
-    ex.cost = Math.round(((oc * ou + unitCost * qty) / nu) * 100) / 100;
-    if (ex.costText) ex.costText = formatEditValue(ex.cost);
+  const sameName = lot.items.filter(i => i && i.name && n && normName(i.name) === n);
+  const sameCost = sameName.find(i => Math.abs((Number(i.cost) || 0) - unitCost) < 0.005);
+  if (sameCost) {
+    sameCost.units = (Number(sameCost.units) || 0) + qty;
   } else {
     lot.items.push({ id: nextItemId(), name, cost: unitCost, costText: formatEditValue(unitCost), units: qty });
   }
@@ -1346,6 +1343,8 @@ function adjustStock(t, sign) {
 }
 
 function saveTransaction() {
+  if (Date.now() < txSaveGuard) { showToast('Espera un segundo...', true); return; }
+  txSaveGuard = Date.now() + 700;
   const type = document.getElementById('editType').value;
   const inMonto = parseAmount(document.getElementById('editAmount').value);
   const discount = type === 'ingreso' ? (parseAmount(document.getElementById('editDiscount').value) || 0) : 0;
