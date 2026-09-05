@@ -7,6 +7,7 @@
 <title>Fire Hits TCG - Finanzas e Inventario</title>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
@@ -97,10 +98,7 @@ canvas { width: 100%; height: 220px; }
 #suggestHint { color: #95d5b2; margin-bottom: 0.4rem; }
 #gainHint { margin-top: 0.4rem; }
 body.public .admin-only { display: none !important; }
-body.public #adminOverlay { display: none !important; }
-body:not(.public) #publicOverlay { display: none !important; }
-#publicOverlay .modal { padding: 2rem; max-width: 360px; }
-#adminOverlay .modal { padding: 2rem; max-width: 360px; }
+#adminOverlay .modal { padding: 2rem; max-width: 380px; }
 .print-only { display: none; }
 @media print {
   body * { visibility: hidden; }
@@ -138,6 +136,7 @@ body:not(.public) #publicOverlay { display: none !important; }
     <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">Importar</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
   </div>
+  <button class="btn btn-secondary" id="logoutBtn" style="display:none" onclick="adminLogout()">Salir</button>
 </header>
 
 <nav class="tabs">
@@ -363,56 +362,26 @@ body:not(.public) #publicOverlay { display: none !important; }
       <button class="btn btn-success" onclick="uploadCloud(true)">Subir datos ahora</button>
       <button class="btn btn-primary" onclick="saveCloudConfig()">Guardar y conectar</button>
     </div>
-    <div style="margin-top:1.2rem; border-top:1px solid #2a2a4a; padding-top:1rem;">
-      <h3 style="color:#fff; font-size:0.95rem; margin-bottom:0.5rem;">Link público (solo lectura)</h3>
-      <div class="form-group">
-        <label>Clave para entrar</label>
-        <input type="text" id="shareClave" placeholder="Ej: Charizard123">
-      </div>
-      <div class="form-group">
-        <label>Tu dirección de GitHub Pages (se guarda; llénala una vez)</label>
-        <input type="text" id="shareBase" placeholder="Ej: https://tuusuario.github.io/FireHitsTCG">
-      </div>
-      <div class="form-actions" style="justify-content:flex-start;">
-        <button class="btn btn-success btn-sm" onclick="toggleShare(true)">Activar link</button>
-        <button class="btn btn-secondary btn-sm" onclick="toggleShare(false)">Desactivar</button>
-        <button class="btn btn-secondary btn-sm" id="shareCopyBtn" style="display:none;" onclick="copyShareLink()">Copiar link</button>
-      </div>
-      <p class="form-hint" id="shareStatus"></p>
-    </div>
   </div>
 </div>
 
 <div class="modal-overlay active" id="adminOverlay">
-  <div class="modal" style="max-width:360px;">
-    <div style="text-align:center; margin-bottom:1rem;">
-      <div style="font-size:1.8rem; margin-bottom:0.4rem;">🔒</div>
-      <h2 style="margin-bottom:0.3rem;">Fire Hits TCG</h2>
-      <p class="form-hint" id="adminStatus">Área de administración.</p>
-    </div>
-    <div class="form-group">
-      <label>Clave de administrador</label>
-      <input type="password" id="adminClave" placeholder="Clave">
-    </div>
-    <div class="form-actions" style="justify-content:center;">
-      <button class="btn btn-primary" onclick="adminLogin()">Entrar</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay active" id="publicOverlay">
   <div class="modal">
     <div style="text-align:center; margin-bottom:1rem;">
       <div style="font-size:1.8rem; margin-bottom:0.4rem;">🔒</div>
       <h2 style="margin-bottom:0.3rem;">Fire Hits TCG</h2>
-      <p class="form-hint" id="publicStatus">Verificando link...</p>
+      <p class="form-hint" id="adminStatus">Inicia sesión con tu cuenta para acceder.</p>
     </div>
     <div class="form-group">
-      <label>Clave de acceso</label>
-      <input type="password" id="publicClave" placeholder="Escribe la clave">
+      <label>Correo</label>
+      <input type="email" id="adminEmail" placeholder="tu@correo.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="adminPass" placeholder="Tu contraseña" autocomplete="current-password">
     </div>
     <div class="form-actions" style="justify-content:center;">
-      <button class="btn btn-primary" onclick="publicLogin()">Entrar</button>
+      <button class="btn btn-primary" onclick="adminLogin()">Entrar</button>
     </div>
   </div>
 </div>
@@ -445,11 +414,9 @@ let cloudTimer = null;
 let processingId = null;
 let processingLotId = null;
 let lotItemsDraft = [];
-const IS_PUBLIC = new URLSearchParams(location.search).has('k');
-const PUBLIC_TOKEN = new URLSearchParams(location.search).get('k') || '';
-const ADMIN_CLAVE = 'admin123';
-let SHARE_URL = '';
-let PUBLIC_CONFIG = null;
+const OWNER_EMAIL = 'nerio1807@gmail.com';
+let currentUser = null;
+let authObserverAttached = false;
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -635,8 +602,8 @@ function renderHistory() {
             <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
             <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}</td>
             <td class="admin-only"><div class="td-actions">
-              <button class="btn btn-secondary btn-sm" onclick="openModal(${t.id})">Editar</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteTransaction(${t.id})">Eliminar</button>
+              <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
+              <button class="btn btn-danger btn-sm admin-only" onclick="deleteTransaction(${t.id})">Eliminar</button>
             </div></td>
           </tr>`;
         }).join('')}
@@ -809,8 +776,8 @@ function renderLots() {
             <div class="sub">${dLabel} · ${items.length} producto(s) · ${lotUnits} unidades · ${formatMoney(lotValue)}</div>
           </div>
           <div class="lot-group-actions admin-only">
-            <button class="btn btn-secondary btn-sm" onclick="openLotModal(${l.id})">Editar</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteLot(${l.id})">Eliminar</button>
+            <button class="btn btn-secondary btn-sm admin-only" onclick="openLotModal(${l.id})">Editar</button>
+            <button class="btn btn-danger btn-sm admin-only" onclick="deleteLot(${l.id})">Eliminar</button>
           </div>
         </div>
         ${items.length ? `
@@ -1328,8 +1295,8 @@ function renderCatalog() {
         <td class="c-green">${formatMoney(sugg)}</td>
         <td class="c-green">+${formatMoney(sugg - p.cost)}</td>
         <td class="admin-only"><div class="td-actions">
-          <button class="btn btn-secondary btn-sm" onclick="openCatModal(${p.id})">Editar</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteCatProduct(${p.id})">Eliminar</button>
+          <button class="btn btn-secondary btn-sm admin-only" onclick="openCatModal(${p.id})">Editar</button>
+          <button class="btn btn-danger btn-sm admin-only" onclick="deleteCatProduct(${p.id})">Eliminar</button>
         </div></td>
       </tr>`;
   }).join('');
@@ -1492,7 +1459,8 @@ function initFirebase() {
     cloudDoc = cloudDb.collection('finanzas').doc('principal');
     publicConfigDoc = cloudDb.collection('finanzas').doc('config');
     cloudReady = true;
-    if (!IS_PUBLIC) setCloudStatus('Conectado a la nube');
+    setCloudStatus('Conectado a la nube');
+    attachAuthObserver();
     return true;
   } catch (e) {
     setCloudStatus('Error: ' + e.message);
@@ -1508,7 +1476,6 @@ function setCloudStatus(msg) {
 function openCloudModal() {
   document.getElementById('cloudConfig').value = cloud && cloud.config ? JSON.stringify(cloud.config, null, 2) : '';
   setCloudStatus(cloudReady ? 'Conectado' : (typeof firebase === 'undefined' ? 'Firebase no cargado (revisa internet) o sin configurar.' : (cloud ? 'Config guardada. Pulsa “Subir datos” para subir.' : 'Sin configurar.')));
-  document.getElementById('shareBase').value = localStorage.getItem('firehits_finanzas_sharebase') || '';
   document.getElementById('cloudOverlay').classList.add('active');
 }
 
@@ -1603,12 +1570,6 @@ function scheduleCloud() {
 }
 
 function loadCloud() {
-  if (IS_PUBLIC) {
-    cloud = { config: FALLBACK_CONFIG, auto: false };
-    setTimeout(() => initFirebase(), 1200);
-    initPublicGate();
-    return;
-  }
   const st = localStorage.getItem(STORE_CLOUD);
   if (st) {
     try {
@@ -1618,98 +1579,6 @@ function loadCloud() {
   }
   if (!cloud) cloud = { config: FALLBACK_CONFIG, auto: false };
   if (cloud) setTimeout(() => initFirebase(), 1200);
-}
-
-function showPublicStatus(msg) {
-  const el = document.getElementById('publicStatus');
-  if (el) el.textContent = msg;
-}
-
-function initPublicGate() {
-  document.body.classList.add('public');
-  const tryInit = () => {
-    if (initFirebase()) return publicCheckConfig();
-    setTimeout(tryInit, 300);
-  };
-  tryInit();
-}
-
-function publicCheckConfig() {
-  if (!publicConfigDoc) { showPublicStatus('Error de conexión. Reintenta en unos segundos.'); return; }
-  publicConfigDoc.get().then(snap => {
-    if (!snap.exists) { showPublicStatus('Este link no está disponible (falta config del dueño).'); return; }
-    const c = snap.data();
-    if (!c.compartir) { showPublicStatus('El link está desactivado por el dueño.'); return; }
-    if (!c.token || c.token !== PUBLIC_TOKEN) { showPublicStatus('Link no válido.'); return; }
-    PUBLIC_CONFIG = c;
-    showPublicStatus('Ingresa la clave para ver los datos.');
-    document.getElementById('publicClave').focus();
-  }).catch(() => showPublicStatus('Error de conexión. Reintenta en unos segundos.'));
-}
-
-function publicLogin() {
-  const v = document.getElementById('publicClave').value;
-  if (!v) { showPublicStatus('Escribe la clave.'); return; }
-  if (!PUBLIC_CONFIG || v !== PUBLIC_CONFIG.clave) {
-    showPublicStatus('Clave incorrecta.');
-    return;
-  }
-  publicLoadData();
-}
-
-function publicLoadData() {
-  showPublicStatus('Cargando datos...');
-  cloudDoc.get().then(snap => {
-    if (!snap.exists) { showPublicStatus('Todavía no hay datos. Vuelve más tarde.'); return; }
-    const d = snap.data();
-    transactions = Array.isArray(d.transactions) ? d.transactions : [];
-    lots = normalizeLots(Array.isArray(d.lots) ? d.lots : []);
-    catalog = normalizeCatalog(d.catalog || { margin: 50, products: [] });
-    document.getElementById('publicOverlay').classList.remove('active');
-    render();
-  }).catch(() => showPublicStatus('Error al cargar. Reintenta.'));
-}
-
-function genToken() {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function toggleShare(on) {
-  if (!initFirebase()) { showToast('Conecta la nube primero', true); return; }
-  const clave = document.getElementById('shareClave').value.trim();
-  if (on && !clave) { showToast('Pon una clave antes de activar', true); document.getElementById('shareClave').focus(); return; }
-  const token = on ? genToken() : '';
-  publicConfigDoc.set({ compartir: on, clave: on ? clave : '', token })
-    .then(() => {
-      const base = (document.getElementById('shareBase').value || '').trim().replace(/\/+$/, '');
-      localStorage.setItem('firehits_finanzas_sharebase', base);
-      const st = document.getElementById('shareStatus');
-      const btn = document.getElementById('shareCopyBtn');
-      if (on && base) {
-        SHARE_URL = base + '/finanzas.html?k=' + token;
-        st.innerHTML = 'Link activo. Comparte solo este link:<br><b style="color:#95d5b2; word-break:break-all;">' + SHARE_URL + '</b>';
-        btn.style.display = 'inline-block';
-      } else if (on) {
-        SHARE_URL = base + '/finanzas.html?k=' + token;
-        st.textContent = 'Link generado, pero falta tu dirección de GitHub Pages para armarlo. Escribe la dirección y pulsa Activar link otra vez.';
-        btn.style.display = 'none';
-      } else {
-        st.textContent = 'Link desactivado. Nadie puede entrar ya.';
-        btn.style.display = 'none';
-      }
-      showToast(on ? 'Link activado' : 'Link desactivado');
-    })
-    .catch(e => showToast('Error: ' + e.message, true));
-}
-
-function copyShareLink() {
-  if (!SHARE_URL) return;
-  const done = () => showToast('Link copiado al portapapeles');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(SHARE_URL).then(done).catch(() => { window.prompt('Copia el link:', SHARE_URL); });
-  } else {
-    window.prompt('Copia el link:', SHARE_URL);
-  }
 }
 
 document.getElementById('modalOverlay').addEventListener('click', function(e) {
@@ -1728,27 +1597,68 @@ document.getElementById('cloudOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeCloudModal();
 });
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && !IS_PUBLIC) { closeModal(); closeLotModal(); closeCatModal(); closeReport(); closeCloudModal(); }
+  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeReport(); closeCloudModal(); }
 });
 window.addEventListener('storage', function(e) {
-  if (IS_PUBLIC) return;
   if (e.key === STORE_TX || e.key === STORE_LOTS || e.key === STORE_CAT) { loadTx(); loadLots(); loadCatalog(); render(); }
 });
 
-document.getElementById('publicClave').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') publicLogin();
+document.getElementById('adminEmail').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') adminLogin();
 });
-document.getElementById('adminClave').addEventListener('keydown', function(e) {
+document.getElementById('adminPass').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') adminLogin();
 });
 
+function friendlyAuthError(err) {
+  const c = err && err.code;
+  if (c === 'auth/wrong-password' || c === 'auth/user-not-found' || c === 'auth/invalid-credential') return 'Correo o contraseña incorrectos.';
+  if (c === 'auth/invalid-email') return 'Escribe un correo válido.';
+  if (c === 'auth/too-many-requests') return 'Demasiados intentos. Espera un minuto y vuelve a intentar.';
+  if (c === 'auth/network-request-failed') return 'Sin conexión. Revisa tu internet.';
+  return (err && err.message) || 'No se pudo iniciar sesión.';
+}
+
+function attachAuthObserver() {
+  if (authObserverAttached || !cloudApp || typeof firebase.auth === 'undefined') return;
+  authObserverAttached = true;
+  firebase.auth(cloudApp).onAuthStateChanged(function(user) {
+    currentUser = user;
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.style.display = user ? 'inline-block' : 'none';
+    if (user) {
+      const isOwner = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
+      document.body.classList.toggle('public', !isOwner);
+      document.getElementById('adminOverlay').classList.remove('active');
+      startApp();
+      if (!isOwner) {
+        showToast('Bienvenido (vista de solo lectura)');
+        if (initFirebase()) downloadCloud();
+      } else if (!transactions.length && !lots.length && cloud) {
+        if (initFirebase()) downloadCloud();
+      }
+    } else {
+      document.body.classList.remove('public');
+      document.getElementById('adminOverlay').classList.add('active');
+    }
+  });
+}
+
 function adminLogin() {
-  const v = document.getElementById('adminClave').value;
-  if (v === ADMIN_CLAVE) {
-    document.getElementById('adminOverlay').classList.remove('active');
-    startApp();
-  } else {
-    document.getElementById('adminStatus').textContent = 'Clave incorrecta.';
+  const email = document.getElementById('adminEmail').value.trim();
+  const pass = document.getElementById('adminPass').value;
+  const st = document.getElementById('adminStatus');
+  if (!email || !pass) { st.textContent = 'Escribe tu correo y tu contraseña.'; return; }
+  if (!initFirebase()) { st.textContent = 'No hay conexión. Revisa internet.'; return; }
+  st.textContent = 'Verificando...';
+  firebase.auth(cloudApp).signInWithEmailAndPassword(email, pass).catch(function(err) {
+    st.textContent = friendlyAuthError(err);
+  });
+}
+
+function adminLogout() {
+  if (cloudApp && typeof firebase.auth !== 'undefined') {
+    firebase.auth(cloudApp).signOut();
   }
 }
 
@@ -1761,12 +1671,8 @@ function startApp() {
   render();
 }
 
-if (IS_PUBLIC) {
-  document.body.classList.add('public');
-  loadCloud();
-} else {
-  document.getElementById('adminOverlay').classList.add('active');
-}
+document.getElementById('adminOverlay').classList.add('active');
+loadCloud();
 </script>
 </body>
 </html>
