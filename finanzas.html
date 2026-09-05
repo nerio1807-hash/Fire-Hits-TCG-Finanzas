@@ -1046,12 +1046,17 @@ function onMultiLineLotChange(k) {
   renderMultiSaleLines();
 }
 
+function normName(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
 function onMultiLineItemChange(k) {
   syncMultiSaleFromDom();
   const ln = multiSaleLines[k];
   if (ln && ln.itemId) {
     const item = getItemInLot(ln.lotId, ln.itemId);
-    const p = item ? catalog.products.find(c => (c.name || '').toLowerCase() === (item.name || '').toLowerCase()) : null;
+    const n = normName(item ? item.name : '');
+    const p = n ? catalog.products.find(c => n === normName(c.name)) : null;
     ln.price = (p ? catSalePrice(p) : null) || (item ? Number(item.cost) : 0) || null;
   }
   renderMultiSaleLines();
