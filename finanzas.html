@@ -249,6 +249,14 @@ body.public .admin-only { display: none !important; }
         <label>¿A cuál lote lo agregas?</label>
         <select id="editGastoLot"></select>
       </div>
+      <div class="form-group" id="gastoProdGroup" style="display:none; margin-top:0.5rem; border:1px dashed #2a2a4a; padding:0.75rem; border-radius:10px;">
+        <label style="font-size:.72rem; color:#95d5b2; text-transform:uppercase; letter-spacing:0.05em;">Agregar a este lote</label>
+        <label>Producto comprado</label>
+        <input type="text" id="editGastoProdName" list="catNamesList" placeholder="Ej: Booster Box" oninput="updateGastoProdHint()">
+        <label>Unidades compradas</label>
+        <input type="number" id="editGastoProdQty" min="1" step="1" value="1" oninput="updateGastoProdHint()">
+        <div class="form-hint" id="gastoProdHint">Costo por unidad: $0,00</div>
+      </div>
     </div>
     <div class="form-group" id="multiModeGroup" style="display:none;">
       <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
@@ -473,6 +481,7 @@ let authObserverAttached = false;
 let cloudWatcher = null;
 let watchStarted = false;
 let pendingGastoLotTxId = null;
+let pendingLotFirstItem = null;
 let openBalance = 0;
 let multiSaleLines = [];
 const FALLBACK_CONFIG = {
@@ -1127,8 +1136,44 @@ function recalcMultiSaleTotals() {
 function onGastoLinkChange() {
   const v = document.getElementById('editGastoLink').value;
   const isEx = v === 'existing';
+  const isPurchase = v === 'existing' || v === 'new';
   document.getElementById('existingLotGroup').style.display = isEx ? 'block' : 'none';
+  document.getElementById('gastoProdGroup').style.display = isPurchase ? 'block' : 'none';
   if (isEx) fillGastoLotSelect(Number(document.getElementById('editGastoLot').value) || null);
+  updateGastoProdHint();
+}
+
+function updateGastoProdHint() {
+  const hint = document.getElementById('gastoProdHint');
+  if (!hint) return;
+  const amount = parseAmount(document.getElementById('editAmount').value);
+  const qty = parseInt(document.getElementById('editGastoProdQty').value) || 0;
+  if (qty > 0 && amount > 0) {
+    const unit = Math.round(amount / qty * 100) / 100;
+    hint.textContent = 'Costo por unidad: ' + formatMoney(unit) + ' = ' + formatMoney(amount) + ' ÷ ' + qty + ' unidades';
+  } else {
+    hint.textContent = 'Pon el monto y las unidades para calcular el costo por unidad.';
+  }
+  if (!hint.textContent) hint.textContent = 'Costo por unidad: $0,00';
+}
+
+function addItemToLot(lotId, name, qty, unitCost) {
+  const lot = getLot(lotId);
+  if (!lot) return false;
+  if (!lot.items) lot.items = [];
+  const n = normName(name);
+  const ex = lot.items.find(i => i && i.name && n && normName(i.name) === n);
+  if (ex) {
+    const ou = Number(ex.units) || 0;
+    const oc = Number(ex.cost) || 0;
+    const nu = ou + qty;
+    ex.units = nu;
+    ex.cost = Math.round(((oc * ou + unitCost * qty) / nu) * 100) / 100;
+    if (ex.costText) ex.costText = formatEditValue(ex.cost);
+  } else {
+    lot.items.push({ id: nextItemId(), name, cost: unitCost, costText: formatEditValue(unitCost), units: qty });
+  }
+  return true;
 }
 
 function fillGastoLotSelect(selected) {
@@ -1274,6 +1319,9 @@ function openModal(id = null) {
     document.getElementById('editGastoLink').value = '';
     document.getElementById('editGastoLot').value = '';
   }
+  document.getElementById('editGastoProdName').value = '';
+  document.getElementById('editGastoProdQty').value = '1';
+  pendingLotFirstItem = null;
   document.getElementById('multiSaleMode').checked = false;
   multiSaleLines = [];
   toggleCostField();
@@ -1356,12 +1404,23 @@ function saveTransaction() {
     soldItem = { name: item.name, units: Number(item.units) || 0 };
   }
   let linkNewLot = false;
+  let lienName = '';
+  let lienQty = 0;
+  let lienUnitCost = 0;
   if (type === 'gasto') {
     const gl = document.getElementById('editGastoLink').value;
+    if (gl === 'existing' || gl === 'new') {
+      lienName = document.getElementById('editGastoProdName').value.trim();
+      lienQty = parseInt(document.getElementById('editGastoProdQty').value) || 0;
+      if (!lienName) { showToast('Escribe el nombre del producto que compraste', true); return; }
+      if (lienQty <= 0) { showToast('Pon las unidades que compraste de ese producto', true); return; }
+      lienUnitCost = Math.round(amount / lienQty * 100) / 100;
+    }
     if (gl === 'existing') {
       const glotId = Number(document.getElementById('editGastoLot').value) || null;
       if (!glotId) { showToast('Elige el lote existente al que va la compra', true); return; }
       lotId = glotId;
+      if (!addItemToLot(lotId, lienName, lienQty, lienUnitCost)) { showToast('No se encontró el lote', true); return; }
     } else if (gl === 'new') {
       linkNewLot = true;
     }
@@ -1380,12 +1439,15 @@ function saveTransaction() {
   }
   if (lotId) adjustStock(data, -1);
   saveTx();
+  if (lienName) saveLots();
   render();
   closeModal();
+  const addedMsg = lienName ? ' · ' + lienQty + ' und de "' + lienName + '" agregadas al lote' : '';
   const stockMsg = soldItem ? ' · Quedan ' + Math.max(0, soldItem.units - qty) + ' und de "' + soldItem.name + '"' : '';
-  showToast((id ? 'Movimiento actualizado' : 'Movimiento registrado') + stockMsg);
+  showToast((id ? 'Movimiento actualizado' : 'Movimiento registrado') + stockMsg + addedMsg);
   if (linkNewLot) {
     pendingGastoLotTxId = id ? Number(id) : data.id;
+    pendingLotFirstItem = { name: lienName, unitCost: lienUnitCost, qty: lienQty };
     openLotModal();
     const nm = (desc || category).trim();
     if (nm) document.getElementById('editLotName').value = nm;
@@ -1489,6 +1551,17 @@ function openLotModal(id = null) {
     lotItemsDraft = [];
     renderLotItems();
     addItemRow();
+    if (pendingLotFirstItem) {
+      lotItemsDraft[0] = {
+        id: lotItemsDraft[0].id,
+        name: pendingLotFirstItem.name,
+        cost: pendingLotFirstItem.unitCost,
+        costText: formatEditValue(pendingLotFirstItem.unitCost),
+        units: pendingLotFirstItem.qty
+      };
+      renderLotItems();
+      pendingLotFirstItem = null;
+    }
     document.getElementById('deleteLotBtn').style.display = 'none';
   }
   document.getElementById('lotModalOverlay').classList.add('active');
