@@ -1100,12 +1100,31 @@ function deleteFromModal() {
   }
 }
 
+function syncLotDraftFromDom() {
+  const container = document.getElementById('lotItems');
+  if (!container) return;
+  container.querySelectorAll('.lot-item-row').forEach(row => {
+    const id = Number(row.dataset.lotItem);
+    const d = lotItemsDraft.find(x => x.id === id);
+    if (!d) return;
+    const name = row.querySelector('.li-name').value;
+    const costRaw = row.querySelector('.li-cost').value;
+    const unitsRaw = row.querySelector('.li-units').value;
+    d.name = name;
+    d.costText = String(costRaw || '').trim();
+    d.cost = parseAmount(costRaw);
+    d.units = String(unitsRaw || '').trim() === '' ? '' : (parseInt(unitsRaw, 10) || 0);
+  });
+}
+
 function addItemRow(item = null) {
+  syncLotDraftFromDom();
   lotItemsDraft.push({ id: item ? Number(item.id) : nextItemId(), name: item ? item.name : '', cost: item ? item.cost : '', costText: item && item.costText ? item.costText : '', units: item ? item.units : '' });
   renderLotItems();
 }
 
 function removeItemRow(id) {
+  syncLotDraftFromDom();
   lotItemsDraft = lotItemsDraft.filter(i => i.id !== Number(id));
   renderLotItems();
 }
