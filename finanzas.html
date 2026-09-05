@@ -137,7 +137,7 @@ body.public .admin-only { display: none !important; }
 <body>
 
 <header>
-  <h1>Fire <span>Hits</span> TCG <span style="font-size:0.8rem; color:#888;">· Finanzas e Inventario</span></h1>
+  <h1>Fire <span>Hits</span> TCG <span style="font-size:0.8rem; color:#888;">· Finanzas e Inventario</span> <span id="buildVer" style="font-size:0.7rem; color:#888; border:1px solid #3b3b5c; padding:0.1rem 0.4rem; border-radius:6px; vertical-align:middle;">v0</span></h1>
   <div class="actions admin-only">
     <button class="btn btn-secondary" onclick="exportJSON()">Exportar</button>
     <button class="btn btn-secondary" onclick="exportCSV()">CSV</button>
@@ -453,6 +453,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
+const BUILD_VERSION = '2026-09-05-lotcost';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -2228,6 +2229,7 @@ function adminLogout() {
 }
 
 function startApp() {
+  document.getElementById('buildVer').textContent = BUILD_VERSION;
   buildMonthOptions();
   loadTx();
   loadLots();
