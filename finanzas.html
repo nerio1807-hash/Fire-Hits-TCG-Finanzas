@@ -595,7 +595,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v13';
+const BUILD_VERSION = '2026-09-05-preventas-v14';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1343,33 +1343,36 @@ function onPreventaPayToggle() {
 function getPayablePreventas() {
   const pagadas = new Set(transactions.filter(t => t.preventaId).map(t => t.preventaId));
   return preventas.filter(p => {
-    if (!p || !Array.isArray(p.lines) || !p.lines.length) return false;
+    if (!p || !Array.isArray(p.lines)) return false;
     if (pagadas.has(p.id)) return false;
     if (prevPendiente(p) <= 0) return false;
-    const lot = getLot(p.lines[0].lotId);
-    return !!lot;
+    return true;
   });
 }
 
 function registerPreventaPayment(p, frac, date) {
-  if (!p || !Array.isArray(p.lines) || !p.lines.length) return { error: 'Esa preventa no tiene productos para descontar del inventario' };
+  if (!p || !Array.isArray(p.lines)) return { error: 'La preventa no existe' };
   if (transactions.some(t => t.preventaId === p.id)) return { error: 'Esa preventa ya tiene su pago registrado (el inventario ya salió)' };
   const collected = Math.round((Number(p.total) || 0) * frac * 100) / 100;
   if (collected <= 0) return { error: 'El monto del pago debe ser mayor a 0' };
-  const rowsTotal = p.lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
   const evts = [];
   let unitsOut = 0;
-  for (const l of p.lines) {
-    const item = getItemInLot(l.lotId, l.itemId);
-    if (!item) return { error: 'Un producto de la preventa ya no existe en su lote' };
-    const qty = parseInt(l.qty) || 1;
-    if (qty <= 0) return { error: 'La preventa tiene unidades inválidas' };
-    if (qty > (Number(item.units) || 0)) return { error: 'No hay suficientes unidades de "' + item.name + '" en inventario' };
-    const lineTotal = (Number(l.price) || 0) * qty;
-    const share = rowsTotal > 0 ? (lineTotal / rowsTotal) : (1 / p.lines.length);
-    const lineAmount = Math.round(collected * share * 100) / 100;
-    evts.push({ type: 'ingreso', amount: lineAmount, cost: (Number(item.cost) || 0) * qty, discount: 0, lotId: l.lotId, itemId: l.itemId, qty, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id });
-    unitsOut += qty;
+  if (!p.lines.length) {
+    evts.push({ type: 'ingreso', amount: collected, cost: 0, discount: 0, lotId: null, itemId: null, qty: 0, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id });
+  } else {
+    const rowsTotal = p.lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
+    for (const l of p.lines) {
+      const item = getItemInLot(l.lotId, l.itemId);
+      if (!item) return { error: 'Un producto de la preventa ya no existe en su lote' };
+      const qty = parseInt(l.qty) || 1;
+      if (qty <= 0) return { error: 'La preventa tiene unidades inválidas' };
+      if (qty > (Number(item.units) || 0)) return { error: 'No hay suficientes unidades de "' + item.name + '" en inventario' };
+      const lineTotal = (Number(l.price) || 0) * qty;
+      const share = rowsTotal > 0 ? (lineTotal / rowsTotal) : (1 / p.lines.length);
+      const lineAmount = Math.round(collected * share * 100) / 100;
+      evts.push({ type: 'ingreso', amount: lineAmount, cost: (Number(item.cost) || 0) * qty, discount: 0, lotId: l.lotId, itemId: l.itemId, qty, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id });
+      unitsOut += qty;
+    }
   }
   if (!evts.length) return { error: 'La preventa no tiene productos válidos' };
   let total = 0;
@@ -1411,7 +1414,7 @@ function confirmCobrarPrev(frac) {
     const res = registerPreventaPayment(p, frac, todayStr());
     if (res && res.error) { showToast(res.error, true); return; }
     closeCobrarPrevModal();
-    showToast('Cobro a ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + ' · ' + res.unitsOut + ' producto(s) salieron del inventario' + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+    showToast('Cobro a ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + (res.unitsOut ? ' · ' + res.unitsOut + ' producto(s) salieron del inventario' : '') + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
   } catch (err) {
     if (typeof console !== 'undefined' && console.error) console.error('cobrarPreventa:', err);
     showToast('Error al cobrar: ' + ((err && err.message) || err), true);
@@ -1423,7 +1426,8 @@ function fillPreventaPaySel() {
   const payable = getPayablePreventas();
   let opts = '<option value="">— Elige la preventa —</option>';
   payable.forEach(p => {
-    opts += '<option value="' + p.id + '">' + escapeHtml(p.client || 'Sin cliente') + ' · ' + formatMoney(p.total) + ' (' + p.lines.reduce((s, l) => s + (Number(l.qty) || 1), 0) + ' und)</option>';
+    const undTxt = (p.lines && p.lines.length) ? ' (' + p.lines.reduce((s, l) => s + (Number(l.qty) || 1), 0) + ' und)' : '';
+    opts += '<option value="' + p.id + '">' + escapeHtml(p.client || 'Sin cliente') + ' · ' + formatMoney(p.total) + undTxt + '</option>';
   });
   sel.innerHTML = opts;
   sel.value = '';
@@ -1436,7 +1440,7 @@ function onPreventaPaySelChange() {
   const p = preventas.find(x => x.id === Number(sel.value));
   if (!p) {
     amt.innerHTML = '<option value="">Selecciona la preventa primero...</option>';
-    hint.textContent = getPayablePreventas().length ? '' : 'No hay preventas con productos y saldo pendiente para cobrar.';
+    hint.textContent = getPayablePreventas().length ? '' : 'No hay preventas con saldo pendiente para cobrar.';
     document.getElementById('preventaPayAmtGroup').style.display = 'block';
     return;
   }
@@ -1812,7 +1816,7 @@ function saveTransaction() {
       const res = registerPreventaPayment(p, frac, date);
       if (res.error) { showToast(res.error, true); return; }
       closeModal();
-      showToast('Pago de preventa de ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + ' · ' + res.unitsOut + ' producto(s) salieron del inventario' + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+      showToast('Pago de preventa de ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + (res.unitsOut ? ' · ' + res.unitsOut + ' producto(s) salieron del inventario' : '') + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
     } catch (err) {
       if (typeof console !== 'undefined' && console.error) console.error('preventaPay:', err);
       showToast('Error al registrar el pago de la preventa: ' + ((err && err.message) || err), true);
