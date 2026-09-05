@@ -58,6 +58,7 @@ header h1 span { color: #e63946; }
 .hist-head { cursor: pointer; display: inline-block; }
 .hist-head:hover { color: #95d5b2; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+  .filter-note { flex-basis: 100%; font-size: 0.85rem; color: #f1c40f; background: #1a1a2e; border: 1px dashed #f1c40f; border-radius: 8px; padding: 0.5rem 0.75rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .tablewrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 th { text-align: left; color: #888; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem; border-bottom: 1px solid #2a2a4a; position: sticky; top: 0; background: #1a1a2e; }
@@ -180,6 +181,7 @@ body.public .admin-only { display: none !important; }
           <input type="text" id="filterSearch" placeholder="Descripción o categoría..." oninput="render()">
         </label>
       </div>
+      <div class="filter-note" id="filterNote" style="display:none;"></div>
     </div>
 
     <div class="cash-banner" id="cashBanner"></div>
@@ -557,7 +559,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v6';
+const BUILD_VERSION = '2026-09-05-preventas-v7';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -851,15 +853,21 @@ function getFiltered() {
 }
 
 function renderStats() {
-  const totalIn = transactions.filter(t => t.type === 'ingreso').reduce((s,t) => s + Number(t.amount), 0);
-  const totalOut = transactions.filter(t => t.type === 'gasto').reduce((s,t) => s + Number(t.amount), 0);
+  const filtered = getFiltered();
+  const fType = document.getElementById('filterType').value;
+  const fMonth = document.getElementById('filterMonth').value;
+  const fSearch = document.getElementById('filterSearch').value.trim();
+  const active = !!(fType || fMonth || fSearch);
+  const totalIn = filtered.filter(t => t.type === 'ingreso').reduce((s,t) => s + Number(t.amount), 0);
+  const totalOut = filtered.filter(t => t.type === 'gasto').reduce((s,t) => s + Number(t.amount), 0);
   const invValue0 = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0), 0);
   const totalCost = invValue0;
   const gain = totalIn - totalCost;
   const now = new Date();
   const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-  const monthIn = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
-  const monthOut = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
+  const monthKey = fMonth || ym;
+  const monthIn = filtered.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + Number(t.amount), 0);
+  const monthOut = filtered.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + Number(t.amount), 0);
   const cash = openBalance + (totalIn - totalOut);
   const invValue = invValue0;
   const projInv = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => {
@@ -872,8 +880,21 @@ function renderStats() {
     }, 0), 0);
   const currentTotal = cash + invValue;
   const projected = cash + projInv;
+  const note = document.getElementById('filterNote');
+  if (note) {
+    if (active) {
+      const parts = [];
+      if (fType) parts.push('Tipo: <b>' + (fType === 'ingreso' ? 'Ingresos' : 'Gastos') + '</b>');
+      if (fMonth) parts.push('Mes: <b>' + fMonth + '</b>');
+      if (fSearch) parts.push('Busca: <b>"' + escapeHtml(fSearch) + '"</b>');
+      note.innerHTML = '🔎 Mostrando solo: ' + parts.join(' · ') + ' &nbsp;<button class="btn btn-secondary btn-sm" onclick="clearFilters()">Quitar filtros</button>';
+      note.style.display = 'flex';
+    } else {
+      note.style.display = 'none';
+    }
+  }
   document.getElementById('cashBanner').innerHTML = `
-    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">Saldo inicial ${formatMoney(openBalance)} + Movimientos ${formatMoney(totalIn - totalOut)}</div>${currentUser && currentUser.email && String(currentUser.email).toLowerCase() === OWNER_EMAIL.toLowerCase() ? '<button class="btn btn-secondary btn-sm admin-only" style="padding:0.15rem 0.5rem; font-size:0.7rem; margin-top:0.4rem;" onclick="setOpenBalance()">Poner saldo inicial</button>' : ''}</div>
+    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">${active ? 'Según los movimientos filtrados' : 'Saldo inicial ' + formatMoney(openBalance) + ' + Movimientos ' + formatMoney(totalIn - totalOut)}</div>${currentUser && currentUser.email && String(currentUser.email).toLowerCase() === OWNER_EMAIL.toLowerCase() ? '<button class="btn btn-secondary btn-sm admin-only" style="padding:0.15rem 0.5rem; font-size:0.7rem; margin-top:0.4rem;" onclick="setOpenBalance()">Poner saldo inicial</button>' : ''}</div>
     <div class="stat-card"><h3>📦 Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que pagaste por los productos sin vender</div></div>
     <div class="stat-card"><h3>💼 Total actual del negocio</h3><p class="big ${currentTotal >= 0 ? 'c-green' : 'c-red'}">${formatMoney(currentTotal)}</p><div class="sub">Caja + costo del inventario</div></div>
     <div class="stat-card"><h3>🎯 Proyección al vender todo</h3><p class="big ${projected >= 0 ? 'c-green' : 'c-red'}">${formatMoney(projected)}</p><div class="sub">Caja + precio de venta de tu inventario</div></div>
@@ -883,9 +904,16 @@ function renderStats() {
     <div class="stat-card"><h3>Costos de productos</h3><p class="c-red">${formatMoney(totalCost)}</p><div class="sub">Costo del inventario actual</div></div>
     <div class="stat-card"><h3>Ganancia neta</h3><p class="${gain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gain)}</p></div>
     <div class="stat-card clickable-stat" onclick="setHistoryFilter('gasto')" title="Ver todos los gastos"><h3>Gastos totales</h3><p class="c-red">${formatMoney(totalOut)}</p><div class="sub">Clic para ver los gastos</div></div>
-    <div class="stat-card"><h3>Este mes</h3><p class="c-white">${formatMoney(monthIn - monthOut)}</p></div>
-    <div class="stat-card"><h3>Movimientos</h3><p class="c-white">${transactions.length}</p></div>
+    <div class="stat-card"><h3>${fMonth ? 'Mes filtrado' : 'Este mes'}</h3><p class="c-white">${formatMoney(monthIn - monthOut)}</p></div>
+    <div class="stat-card"><h3>Movimientos</h3><p class="c-white">${filtered.length}</p><div class="sub">${active ? 'De ' + transactions.length + ' en total' : 'Registrados en tu caja'}</div></div>
   `;
+}
+
+function clearFilters() {
+  document.getElementById('filterType').value = '';
+  document.getElementById('filterMonth').value = '';
+  document.getElementById('filterSearch').value = '';
+  render();
 }
 
 function setHistoryFilter(type) {
