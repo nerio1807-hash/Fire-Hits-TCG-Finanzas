@@ -487,6 +487,21 @@ function nextCatId() {
   return catalog.products.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1;
 }
 
+function syncCatalogFromLots() {
+  const names = new Set(catalog.products.map(p => (p.name || '').toLowerCase()));
+  let added = 0;
+  lots.forEach(l => (l.items || []).forEach(i => {
+    if (!(i && i.name)) return;
+    const k = i.name.toLowerCase();
+    if (names.has(k)) return;
+    names.add(k);
+    catalog.products.push({ id: nextCatId(), name: i.name, cost: Number(i.cost) || 0, costText: i.costText || '', margin: null });
+    added++;
+  }));
+  if (added) { saveCatalog(); fillCatNamesDatalist(); }
+  return added;
+}
+
 function loadTx() {
   const stored = localStorage.getItem(STORE_TX);
   if (stored) {
@@ -601,11 +616,22 @@ function renderStats() {
   const monthOut = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t) => s + Number(t.amount), 0);
   const cash = totalIn - totalOut;
   const invValue = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0), 0);
-  const netWorth = cash + invValue;
+  const defM = Number(catalog.margin) || 0;
+  const projInv = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => {
+      const un = Number(i.units) || 0;
+      const c = Number(i.cost) || 0;
+      if (!un || !c) return a;
+      const p = catalog.products.find(x => (x.name || '').toLowerCase() === (i.name || '').toLowerCase());
+      const m = (p && p.margin !== null && p.margin !== undefined) ? (Number(p.margin) || 0) : defM;
+      return a + c * un * (1 + m / 100);
+    }, 0), 0);
+  const currentTotal = cash + invValue;
+  const projected = cash + projInv;
   document.getElementById('cashBanner').innerHTML = `
     <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">Ingresos ${formatMoney(totalIn)} − Gastos ${formatMoney(totalOut)}</div></div>
-    <div class="stat-card"><h3>Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que tienes en productos sin vender</div></div>
-    <div class="stat-card"><h3>Total del negocio</h3><p class="big ${netWorth >= 0 ? 'c-green' : 'c-red'}">${formatMoney(netWorth)}</p><div class="sub">Caja + inventario (lo que tendrías al vender todo)</div></div>
+    <div class="stat-card"><h3>📦 Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que pagaste por los productos sin vender</div></div>
+    <div class="stat-card"><h3>💼 Total actual del negocio</h3><p class="big ${currentTotal >= 0 ? 'c-green' : 'c-red'}">${formatMoney(currentTotal)}</p><div class="sub">Caja + costo del inventario</div></div>
+    <div class="stat-card"><h3>🎯 Proyección al vender todo</h3><p class="big ${projected >= 0 ? 'c-green' : 'c-red'}">${formatMoney(projected)}</p><div class="sub">Caja + precios sugeridos del catálogo</div></div>
   `;
   document.getElementById('stats').innerHTML = `
     <div class="stat-card"><h3>Ingresos totales</h3><p class="c-green">${formatMoney(totalIn)}</p></div>
@@ -1211,6 +1237,7 @@ function saveLot() {
     lots.push({ id: getNextId(lots), name, date, items });
   }
   saveLots();
+  syncCatalogFromLots();
   render();
   closeLotModal();
   const dupMsg = dupes.length ? ' · OJO: ' + dupes.join(', ') + ' repetido(s)' : '';
@@ -1760,6 +1787,7 @@ function startApp() {
   loadTx();
   loadLots();
   loadCatalog();
+  syncCatalogFromLots();
   loadCloud();
   render();
 }
