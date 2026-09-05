@@ -68,6 +68,8 @@ tr:hover td { background: #1c1c30; }
 .badge-gasto { background: #6a040f; color: #ff8a8a; }
 .badge-lote { background: #2a2a4a; color: #a8a8d0; }
 .badge-pedido { background: #4a3520; color: #ffd28a; }
+.badge-ok { background: #1b4332; color: #95d5b2; }
+.badge-warn { background: #4a3520; color: #ffd28a; }
 .badge-agotado { background: #3a3a5a; color: #bbb; }
 .amount-in { color: #95d5b2; font-weight: 700; }
 .amount-out { color: #e63946; font-weight: 700; }
@@ -155,6 +157,7 @@ body.public .admin-only { display: none !important; }
   <button class="tab" id="tabInventario" onclick="switchTab('inventario')">Inventario</button>
   <button class="tab" id="tabCatalogo" onclick="switchTab('catalogo')">Catálogo</button>
   <button class="tab" id="tabMovimientos" onclick="switchTab('movimientos')">Movimientos</button>
+  <button class="tab" id="tabPreventas" onclick="switchTab('preventas')">Preventas</button>
 </nav>
 
 <div class="container">
@@ -248,6 +251,18 @@ body.public .admin-only { display: none !important; }
     </div>
     <div class="panel full">
       <div class="tablewrap" id="movTable"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-preventas">
+    <div class="toolbar">
+      <h2 style="margin:0; color:#fff;">Preventas / Apartados</h2>
+      <button class="btn btn-primary admin-only" onclick="openPrevModal()">+ Agregar preventa</button>
+    </div>
+    <div class="stats" id="prevStats"></div>
+    <div class="panel full">
+      <div class="form-hint" style="margin-bottom:0.75rem;">Esta pestaña <b>no afecta tus finanzas ni tu inventario</b>: es solo tu control de clientes que compran por preventa.</div>
+      <div class="tablewrap" id="prevTableWrap"></div>
     </div>
   </div>
 
@@ -348,6 +363,50 @@ body.public .admin-only { display: none !important; }
       <button class="btn btn-danger" id="deleteBtn" style="display:none;" onclick="deleteFromModal()">Eliminar</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveTransaction()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="prevModalOverlay">
+  <div class="modal">
+    <h2 id="prevModalTitle">Agregar preventa</h2>
+    <input type="hidden" id="editPrevId">
+    <div class="form-group">
+      <label>Cliente</label>
+      <input type="text" id="editPrevClient" placeholder="Nombre del cliente">
+    </div>
+    <div class="form-group">
+      <label>Productos pedidos</label>
+      <textarea id="editPrevProducts" rows="3" placeholder="Uno por línea, ej:&#10;2x Booster Box&#10;1x Charizard V" style="resize:vertical;"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Total a pagar</label>
+      <input type="text" id="editPrevTotal" placeholder="Ej: 300,00" inputmode="decimal" oninput="updatePrevHint()" onblur="formatFieldOnBlur(this)">
+    </div>
+    <div class="form-group" style="display:flex; gap:0.75rem;">
+      <label style="flex:1;">Primera parte (seña)
+        <input type="text" id="editPrevP1" placeholder="Ej: 100,00" inputmode="decimal" oninput="updatePrevHint()" onblur="formatFieldOnBlur(this)">
+      </label>
+      <label style="flex:1;">Segunda parte (resto)
+        <input type="text" id="editPrevP2" placeholder="Ej: 200,00" inputmode="decimal" oninput="updatePrevHint()" onblur="formatFieldOnBlur(this)">
+      </label>
+    </div>
+    <div class="form-hint" id="prevPayHint"></div>
+    <div class="form-group">
+      <label>Entrega</label>
+      <select id="editPrevStatus">
+        <option value="pending">Por entregar</option>
+        <option value="delivered">Entregado</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notas</label>
+      <input type="text" id="editPrevNotes" placeholder="Opcional (ej: entrega el viernes)">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-danger" id="deletePrevBtn" style="display:none;" onclick="deletePrevFromModal()">Eliminar</button>
+      <button class="btn btn-secondary" onclick="closePrevModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePreventa()">Guardar</button>
     </div>
   </div>
 </div>
@@ -518,6 +577,8 @@ let pendingLotFirstItem = null;
 let txSaveGuard = 0;
 let openBalance = 0;
 let multiSaleLines = [];
+const STORE_PREV = 'firehits_preventas';
+let preventas = [];
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -627,6 +688,38 @@ function loadOpen() {
 function saveOpen() {
   localStorage.setItem(STORE_OPEN, JSON.stringify(openBalance));
   scheduleCloud();
+}
+
+function loadPreventas() {
+  const stored = localStorage.getItem(STORE_PREV);
+  if (stored) {
+    try {
+      const data = JSON.parse(stored);
+      preventas = Array.isArray(data) ? normalizePreventas(data) : [];
+    } catch(e) { preventas = []; }
+  }
+}
+
+function normalizePreventas(arr) {
+  return arr.map(p => ({
+    id: Number(p.id) || 0,
+    client: (p.client || '').trim(),
+    products: (p.products || '').trim(),
+    total: Number(p.total) || 0,
+    p1: Number(p.p1) || 0,
+    p2: Number(p.p2) || 0,
+    status: p.status === 'delivered' ? 'delivered' : 'pending',
+    notes: (p.notes || '').trim(),
+    date: p.date || ''
+  })).filter(p => p.id);
+}
+
+function savePreventas() {
+  localStorage.setItem(STORE_PREV, JSON.stringify(preventas));
+}
+
+function getNextPrevId() {
+  return preventas.length ? Math.max(...preventas.map(p => p.id)) + 1 : 1;
 }
 
 function setOpenBalance() {
@@ -1019,6 +1112,7 @@ function render() {
   renderCatalog();
   fillCatNamesDatalist();
   renderMovements();
+  renderPreventas();
 }
 
 function getMovementsFiltered() {
@@ -1070,10 +1164,12 @@ function switchTab(name) {
   document.getElementById('tabInventario').classList.toggle('active', name === 'inventario');
   document.getElementById('tabCatalogo').classList.toggle('active', name === 'catalogo');
   document.getElementById('tabMovimientos').classList.toggle('active', name === 'movimientos');
+  document.getElementById('tabPreventas').classList.toggle('active', name === 'preventas');
   document.getElementById('page-finanzas').classList.toggle('active', name === 'finanzas');
   document.getElementById('page-inventario').classList.toggle('active', name === 'inventario');
   document.getElementById('page-catalogo').classList.toggle('active', name === 'catalogo');
   document.getElementById('page-movimientos').classList.toggle('active', name === 'movimientos');
+  document.getElementById('page-preventas').classList.toggle('active', name === 'preventas');
   render();
 }
 
@@ -1743,6 +1839,138 @@ function deleteLotFromModal() {
   }
 }
 
+function renderPrevStats() {
+  const pendingPay = preventas.filter(p => (p.total - p.p1 - p.p2) > 0);
+  const porCobrar = pendingPay.reduce((s,p) => s + (p.total - p.p1 - p.p2), 0);
+  const porEntregar = preventas.filter(p => p.status === 'pending').length;
+  const entregados = preventas.filter(p => p.status === 'delivered').length;
+  const wrap = document.getElementById('prevStats');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div class="stat-card"><h3>Clientes en preventa</h3><p class="big c-white">${preventas.length}</p><div class="sub">Total de preventas registradas</div></div>
+    <div class="stat-card"><h3>Por cobrar</h3><p class="big c-green">${formatMoney(porCobrar)}</p><div class="sub">${pendingPay.length} cliente(s) con saldo pendiente</div></div>
+    <div class="stat-card"><h3>Por entregar</h3><p class="big c-white">${porEntregar}</p><div class="sub">${porEntregar} preventa(s) sin entregar</div></div>
+    <div class="stat-card"><h3>Entregado</h3><p class="big c-white">${entregados}</p><div class="sub">Preventas ya entregadas</div></div>
+  `;
+}
+
+function renderPreventas() {
+  const wrap = document.getElementById('prevTableWrap');
+  if (!wrap) return;
+  renderPrevStats();
+  if (!preventas.length) {
+    wrap.innerHTML = '<div class="empty-state"><h3>Sin preventas</h3><p>Agrega tu primera preventa con el botón "+ Agregar preventa".</p></div>';
+    return;
+  }
+  const sorted = [...preventas].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Seña</th><th>Resto</th><th>Saldo</th><th>Estado de pago</th><th>Entrega</th><th>Notas</th><th></th></tr>
+      </thead>
+      <tbody>
+        ${sorted.map(p => {
+          const saldo = (Number(p.total)||0) - (Number(p.p1)||0) - (Number(p.p2)||0);
+          const paid = saldo <= 0;
+          const dParts = (p.date || '').split('-');
+          const dLabel = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : '—';
+          return `<tr>
+            <td>${dLabel}</td>
+            <td><b>${escapeHtml(p.client) || '—'}</b></td>
+            <td style="white-space:pre-line;">${escapeHtml(p.products) || '—'}</td>
+            <td>${formatMoney(p.total)}</td>
+            <td>${formatMoney(p.p1)}</td>
+            <td>${formatMoney(p.p2)}</td>
+            <td class="${saldo > 0 ? 'c-red' : 'c-green'}">${saldo > 0 ? formatMoney(saldo) : '—'}</td>
+            <td>${paid ? '<span class="badge badge-ok">Pagado</span>' : (Number(p.p1) > 0 ? '<span class="badge badge-warn">Seña</span>' : '<span class="badge badge-gasto">Sin pago</span>')}</td>
+            <td>${p.status === 'delivered' ? '<span class="badge badge-ok">Entregado</span>' : '<span class="badge badge-warn">Por entregar</span>'}</td>
+            <td>${escapeHtml(p.notes) || '—'}</td>
+            <td class="admin-only"><div class="td-actions">
+              <button class="btn btn-secondary btn-sm admin-only" onclick="openPrevModal(${p.id})">Editar</button>
+              <button class="btn btn-danger btn-sm admin-only" onclick="deletePreventa(${p.id})">Eliminar</button>
+            </div></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function updatePrevHint() {
+  const hint = document.getElementById('prevPayHint');
+  if (!hint) return;
+  const total = parseAmount(document.getElementById('editPrevTotal').value);
+  const p1 = parseAmount(document.getElementById('editPrevP1').value);
+  const p2 = parseAmount(document.getElementById('editPrevP2').value);
+  const saldo = total - p1 - p2;
+  if (!total && !p1 && !p2) { hint.textContent = ''; return; }
+  if (total > 0 && p1 + p2 === 0) { hint.textContent = 'Sin pagos registrados: cliente aún no paga nada.'; return; }
+  if (saldo <= 0) hint.textContent = '✅ Todo pagado (' + formatMoney(p1 + p2) + ' de ' + formatMoney(total) + ').';
+  else hint.textContent = (p1 > 0 ? 'Seña de ' + formatMoney(p1) + ' · ' : '') + 'Falta pagar: ' + formatMoney(saldo);
+}
+
+function openPrevModal(id = null) {
+  const p = id ? preventas.find(x => x.id === Number(id)) : null;
+  document.getElementById('prevModalTitle').textContent = p ? 'Editar preventa' : 'Agregar preventa';
+  document.getElementById('editPrevId').value = p ? p.id : '';
+  document.getElementById('editPrevClient').value = p ? p.client : '';
+  document.getElementById('editPrevProducts').value = p ? p.products : '';
+  document.getElementById('editPrevTotal').value = p ? formatEditValue(p.total) : '';
+  document.getElementById('editPrevP1').value = p ? formatEditValue(p.p1) : '';
+  document.getElementById('editPrevP2').value = p ? formatEditValue(p.p2) : '';
+  document.getElementById('editPrevStatus').value = p ? p.status : 'pending';
+  document.getElementById('editPrevNotes').value = p ? p.notes : '';
+  document.getElementById('deletePrevBtn').style.display = p ? 'inline-block' : 'none';
+  updatePrevHint();
+  document.getElementById('prevModalOverlay').classList.add('active');
+  lockBody(true);
+}
+
+function closePrevModal() {
+  document.getElementById('prevModalOverlay').classList.remove('active');
+  lockBody(false);
+}
+
+function savePreventa() {
+  const id = document.getElementById('editPrevId').value;
+  const client = document.getElementById('editPrevClient').value.trim();
+  const products = document.getElementById('editPrevProducts').value.trim();
+  const total = parseAmount(document.getElementById('editPrevTotal').value);
+  const p1 = parseAmount(document.getElementById('editPrevP1').value);
+  const p2 = parseAmount(document.getElementById('editPrevP2').value);
+  const status = document.getElementById('editPrevStatus').value;
+  const notes = document.getElementById('editPrevNotes').value.trim();
+  if (!client) { showToast('Escribe el nombre del cliente', true); return; }
+  if (!total && total !== 0) { showToast('Escribe el total a pagar', true); return; }
+  const data = { client, products, total, p1, p2, status, notes, date: (id ? (preventas.find(x => x.id === Number(id)) || {}).date : '') || todayStr() };
+  if (id) {
+    const idx = preventas.findIndex(x => x.id === Number(id));
+    if (idx !== -1) preventas[idx] = { ...preventas[idx], ...data, id: Number(id) };
+  } else {
+    data.id = getNextPrevId();
+    preventas.push(data);
+  }
+  savePreventas();
+  render();
+  closePrevModal();
+  showToast('Preventa guardada');
+}
+
+function deletePreventa(id) {
+  if (!confirm('¿Eliminar esta preventa?')) return;
+  preventas = preventas.filter(x => x.id !== Number(id));
+  savePreventas();
+  render();
+  showToast('Preventa eliminada');
+}
+
+function deletePrevFromModal() {
+  const id = document.getElementById('editPrevId').value;
+  if (id && confirm('¿Eliminar esta preventa?')) {
+    deletePreventa(Number(id));
+    closePrevModal();
+  }
+}
+
 function exportJSON() {
   const data = { transactions, lots, catalog };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8;' });
@@ -2262,11 +2490,15 @@ document.getElementById('reportOverlay').addEventListener('click', function(e) {
 document.getElementById('cloudOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeCloudModal();
 });
+document.getElementById('prevModalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closePrevModal();
+});
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); }
+  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); closePrevModal(); }
 });
 window.addEventListener('storage', function(e) {
   if (e.key === STORE_TX || e.key === STORE_LOTS || e.key === STORE_CAT) { loadTx(); loadLots(); loadCatalog(); render(); }
+  if (e.key === STORE_PREV) { loadPreventas(); renderPreventas(); }
 });
 
 document.getElementById('adminEmail').addEventListener('keydown', function(e) {
@@ -2339,6 +2571,7 @@ function startApp() {
   loadLots();
   loadCatalog();
   loadOpen();
+  loadPreventas();
   syncCatalogFromLots();
   loadCloud();
   render();
