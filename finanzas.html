@@ -153,6 +153,7 @@ body.public .admin-only { display: none !important; }
   <button class="tab active" id="tabFinanzas" onclick="switchTab('finanzas')">Finanzas</button>
   <button class="tab" id="tabInventario" onclick="switchTab('inventario')">Inventario</button>
   <button class="tab" id="tabCatalogo" onclick="switchTab('catalogo')">Catálogo</button>
+  <button class="tab" id="tabMovimientos" onclick="switchTab('movimientos')">Movimientos</button>
 </nav>
 
 <div class="container">
@@ -222,6 +223,30 @@ body.public .admin-only { display: none !important; }
         </table>
       </div>
       <div class="form-hint admin-only" style="margin-top:0.75rem;">Escribe en cada producto su precio de venta. Ese precio se usa como sugerencia al registrar ventas y en la proyección del inicio.</div>
+    </div>
+  </div>
+
+  <div class="page" id="page-movimientos">
+    <div class="toolbar">
+      <h2 style="margin:0; color:#fff;">Movimientos</h2>
+      <div class="filters" style="margin:0;">
+        <label>Tipo:
+          <select id="mType" onchange="renderMovements()">
+            <option value="">Todos</option>
+            <option value="ingreso">Ingresos</option>
+            <option value="gasto">Gastos</option>
+          </select>
+        </label>
+        <label>Mes:
+          <select id="mMonth" onchange="renderMovements()"></select>
+        </label>
+        <label>Buscar:
+          <input type="text" id="mSearch" placeholder="Descripción o categoría..." oninput="renderMovements()">
+        </label>
+      </div>
+    </div>
+    <div class="panel full">
+      <div class="tablewrap" id="movTable"></div>
     </div>
   </div>
 
@@ -738,13 +763,7 @@ function renderStats() {
 }
 
 function setHistoryFilter(type) {
-  document.getElementById('filterType').value = type || '';
-  document.getElementById('filterMonth').value = '';
-  document.getElementById('filterSearch').value = '';
-  buildMonthOptions();
-  render();
-  const t = document.getElementById('historyTable');
-  if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  openMovements(type);
 }
 
 function renderHistory() {
@@ -761,34 +780,42 @@ function renderHistory() {
         <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
       </thead>
       <tbody>
-        ${sorted.map(t => {
-          const parts = (t.date || '').split('-');
-          const dLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : t.date;
-          const item = getItemInLot(t.lotId, t.itemId);
-          const prod = item ? item.name : '';
-          const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
-          return `<tr>
-            <td>${dLabel}</td>
-            <td><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
-            <td>${t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—')}</td>
-            <td>${escapeHtml(t.category || '-')}</td>
-            <td>${escapeHtml(t.desc || '-')}</td>
-            <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
-            <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
-            <td class="admin-only"><div class="td-actions">
-              <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
-              <button class="btn btn-danger btn-sm admin-only" onclick="deleteTransaction(${t.id})">Eliminar</button>
-            </div></td>
-          </tr>`;
-        }).join('')}
+        ${movementRowsHTML(sorted)}
       </tbody>
     </table>`;
+  wrap.innerHTML += movementSummaryHTML(filtered);
+}
+
+function movementRowsHTML(sorted) {
+  return sorted.map(t => {
+    const parts = (t.date || '').split('-');
+    const dLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : t.date;
+    const item = getItemInLot(t.lotId, t.itemId);
+    const prod = item ? item.name : '';
+    const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
+    return `<tr>
+      <td>${dLabel}</td>
+      <td><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
+      <td>${t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—')}</td>
+      <td>${escapeHtml(t.category || '-')}</td>
+      <td>${escapeHtml(t.desc || '-')}</td>
+      <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
+      <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
+      <td class="admin-only"><div class="td-actions">
+        <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
+        <button class="btn btn-danger btn-sm admin-only" onclick="deleteTransaction(${t.id})">Eliminar</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function movementSummaryHTML(filtered) {
   const totalRow = filtered.reduce((acc,t) => {
     if (t.type === 'ingreso') acc.in += Number(t.amount);
     else acc.out += Number(t.amount);
     return acc;
   }, {in:0, out:0});
-  wrap.innerHTML += `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b></p>`;
+  return `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b></p>`;
 }
 
 function renderCharts() {
@@ -983,20 +1010,67 @@ function render() {
   renderLots();
   renderCatalog();
   fillCatNamesDatalist();
+  renderMovements();
+}
+
+function getMovementsFiltered() {
+  const type = document.getElementById('mType').value;
+  const month = document.getElementById('mMonth').value;
+  const search = document.getElementById('mSearch').value.toLowerCase().trim();
+  return transactions.filter(t => {
+    if (type && t.type !== type) return false;
+    if (month && !(t.date || '').startsWith(month)) return false;
+    if (search) {
+      const hay = ((t.desc || '') + ' ' + (t.category || '') + ' ' + (t.type === 'ingreso' ? (getItemInLot(t.lotId, t.itemId) || {}).name || '' : '') + ' ' + ((getLot(t.lotId) || {}).name || '')).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function renderMovements() {
+  const filtered = getMovementsFiltered();
+  const wrap = document.getElementById('movTable');
+  if (!wrap) return;
+  if (!filtered.length) {
+    wrap.innerHTML = '<div class="empty-state"><h3>Sin movimientos</h3><p>No hay movimientos que coincidan con el filtro.</p></div>';
+    return;
+  }
+  const sorted = [...filtered].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
+      </thead>
+      <tbody>
+        ${movementRowsHTML(sorted)}
+      </tbody>
+    </table>`;
+  wrap.innerHTML += movementSummaryHTML(filtered);
+}
+
+function openMovements(type) {
+  document.getElementById('mType').value = type || '';
+  document.getElementById('mMonth').value = '';
+  document.getElementById('mSearch').value = '';
+  buildMonthOptions('mMonth');
+  switchTab('movimientos');
 }
 
 function switchTab(name) {
   document.getElementById('tabFinanzas').classList.toggle('active', name === 'finanzas');
   document.getElementById('tabInventario').classList.toggle('active', name === 'inventario');
   document.getElementById('tabCatalogo').classList.toggle('active', name === 'catalogo');
+  document.getElementById('tabMovimientos').classList.toggle('active', name === 'movimientos');
   document.getElementById('page-finanzas').classList.toggle('active', name === 'finanzas');
   document.getElementById('page-inventario').classList.toggle('active', name === 'inventario');
   document.getElementById('page-catalogo').classList.toggle('active', name === 'catalogo');
+  document.getElementById('page-movimientos').classList.toggle('active', name === 'movimientos');
   render();
 }
 
-function buildMonthOptions() {
-  const sel = document.getElementById('filterMonth');
+function buildMonthOptions(selId) {
+  const sel = document.getElementById(selId || 'filterMonth');
   const now = new Date();
   let opts = '<option value="">Todos los meses</option>';
   for (let i = 0; i < 12; i++) {
