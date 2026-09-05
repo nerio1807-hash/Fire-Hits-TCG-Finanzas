@@ -1123,7 +1123,7 @@ function renderLotItems() {
     return;
   }
   const names = lotItemsDraft.map(i => i.name || '');
-  const costs = lotItemsDraft.map(i => i.cost == null || i.cost === '' ? '' : i.cost);
+  const costs = lotItemsDraft.map(i => i.cost == null || i.cost === '' ? '' : formatEditValue(Number(i.cost)));
   const units = lotItemsDraft.map(i => i.units == null || i.units === '' ? '' : i.units);
   container.innerHTML = lotItemsDraft.map(i => `
     <div class="lot-item-row" data-lot-item="${i.id}">
@@ -1314,7 +1314,7 @@ function onLotItemNameInput(el) {
   if (!row) return;
   const p = catalog.products.find(c => (c.name || '').toLowerCase() === (el.value || '').trim().toLowerCase());
   if (p && !row.querySelector('.li-cost').value) {
-    row.querySelector('.li-cost').value = String(Number(p.cost) || 0).replace('.', ',');
+    row.querySelector('.li-cost').value = formatEditValue(p.cost);
   }
 }
 
