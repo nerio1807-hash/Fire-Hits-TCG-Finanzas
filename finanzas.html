@@ -446,6 +446,21 @@ body.public .admin-only { display: none !important; }
   </div>
 </div>
 
+<div class="modal-overlay" id="cobrarPrevOverlay">
+  <div class="modal" style="max-width:420px;">
+    <h2>Cobrar preventa</h2>
+    <p class="form-hint" id="cobrarPrevInfo"></p>
+    <div style="margin:1rem 0; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden;">
+      <button style="width:100%; display:block; padding:0.85rem 1rem; background:#1b1b38; color:#c7e; text-align:left; border-bottom:1px solid #2a2a4a;" onclick="confirmCobrarPrev(0.5)"><b>Primera parte (50%)</b><br><span style="color:#95d5b2;" id="cobrarPrevHalf">$0,00</span></button>
+      <button style="width:100%; display:block; padding:0.85rem 1rem; background:#1b1b38; color:#c7e; text-align:left;" onclick="confirmCobrarPrev(1)"><b>Pago completo (100%)</b><br><span style="color:#95d5b2;" id="cobrarPrevFull">$0,00</span></button>
+    </div>
+    <div class="form-hint">Al cobrar se registra el ingreso, el dinero entra a tu caja y los productos del pedido salen del inventario.</div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeCobrarPrevModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="lotModalOverlay">
   <div class="modal">
     <h2 id="lotModalTitle">Agregar lote</h2>
@@ -580,7 +595,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v12';
+const BUILD_VERSION = '2026-09-05-preventas-v13';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1368,18 +1383,39 @@ function registerPreventaPayment(p, frac, date) {
   return { total, unitsOut };
 }
 
+var __pendingCobrarId = null;
+
 function cobrarPreventa(id) {
   const p = preventas.find(x => x.id === Number(id));
   if (!p) { showToast('Esa preventa ya no existe', true); return; }
   if (transactions.some(t => t.preventaId === p.id)) { showToast('Esa preventa ya tiene su pago registrado (el inventario ya salió)', true); return; }
-  const r = window.prompt('¿Cuánto pagó ' + (p.client || 'este cliente') + ' ahora?\n\n1 = Primera parte (50%) = ' + formatMoney(Math.round((Number(p.total) || 0) * 50) / 100) + '\n2 = Pago completo (100%) = ' + formatMoney(p.total) + '\n\nEscribí 1 o 2', '1');
-  if (r === null) return;
-  const s = String(r).trim();
-  const frac = (s === '2' || s === '100' || s.toLowerCase() === 'completo') ? 1 : (s === '1' || s === '50' || s.toLowerCase() === 'parte') ? 0.5 : null;
-  if (!frac) { showToast('Escribí 1 para la primera parte (50%) o 2 para el pago completo, o tocá Cancelar', true); return; }
-  const res = registerPreventaPayment(p, frac, todayStr());
-  if (res.error) { showToast(res.error, true); return; }
-  showToast('Cobro a ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + ' · ' + res.unitsOut + ' producto(s) salieron del inventario' + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+  __pendingCobrarId = p.id;
+  document.getElementById('cobrarPrevInfo').textContent = (p.client || 'Sin cliente') + ' · Total del pedido ' + formatMoney(p.total) + ' · Falta cobrar ' + formatMoney(prevPendiente(p));
+  document.getElementById('cobrarPrevHalf').textContent = formatMoney(Math.round((Number(p.total) || 0) * 50) / 100);
+  document.getElementById('cobrarPrevFull').textContent = formatMoney(p.total);
+  document.getElementById('cobrarPrevOverlay').classList.add('active');
+  lockBody(true);
+}
+
+function closeCobrarPrevModal() {
+  __pendingCobrarId = null;
+  document.getElementById('cobrarPrevOverlay').classList.remove('active');
+  lockBody(false);
+}
+
+function confirmCobrarPrev(frac) {
+  if (__pendingCobrarId == null) return;
+  const p = preventas.find(x => x.id === Number(__pendingCobrarId));
+  if (!p) { closeCobrarPrevModal(); showToast('Esa preventa ya no existe', true); return; }
+  try {
+    const res = registerPreventaPayment(p, frac, todayStr());
+    if (res && res.error) { showToast(res.error, true); return; }
+    closeCobrarPrevModal();
+    showToast('Cobro a ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + ' · ' + res.unitsOut + ' producto(s) salieron del inventario' + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+  } catch (err) {
+    if (typeof console !== 'undefined' && console.error) console.error('cobrarPreventa:', err);
+    showToast('Error al cobrar: ' + ((err && err.message) || err), true);
+  }
 }
 
 function fillPreventaPaySel() {
@@ -3115,8 +3151,11 @@ document.getElementById('cloudOverlay').addEventListener('click', function(e) {
 document.getElementById('prevModalOverlay').addEventListener('click', function(e) {
   if (e.target === this) closePrevModal();
 });
+document.getElementById('cobrarPrevOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeCobrarPrevModal();
+});
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); closePrevModal(); }
+  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); closePrevModal(); closeCobrarPrevModal(); }
 });
 window.addEventListener('storage', function(e) {
   if (e.key === STORE_TX || e.key === STORE_LOTS || e.key === STORE_CAT) { loadTx(); loadLots(); loadCatalog(); render(); }
