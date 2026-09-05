@@ -83,9 +83,10 @@ tr:hover td { background: #1c1c30; }
 .lot-group-head h3 { color: #fff; font-size: 1rem; }
 .lot-group-head .sub { color: #888; font-size: 0.8rem; }
 .lot-group-actions { display: flex; gap: 0.5rem; }
+body.modal-open { overflow: hidden; }
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; padding: 1rem; }
 .modal-overlay.active { display: flex; }
-.modal { background: #1a1a2e; border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 2rem; border: 1px solid #2a2a4a; }
+.modal { background: #1a1a2e; border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 2rem; border: 1px solid #2a2a4a; overscroll-behavior: contain; }
 .modal h2 { margin-bottom: 1.5rem; color: #fff; }
 .form-group { margin-bottom: 1rem; }
 .form-group label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 0.3rem; }
@@ -1233,6 +1234,10 @@ function onItemQtyChange() {
   updateGainHint();
 }
 
+function lockBody(open) {
+  document.body.classList.toggle('modal-open', !!open);
+}
+
 function openModal(id = null) {
   processingId = id;
   document.getElementById('modalTitle').textContent = id ? 'Editar movimiento' : 'Registrar movimiento';
@@ -1275,10 +1280,12 @@ function openModal(id = null) {
   onGastoLinkChange();
   onLotChange();
   document.getElementById('modalOverlay').classList.add('active');
+  lockBody(true);
 }
 
 function closeModal() {
   document.getElementById('modalOverlay').classList.remove('active');
+  lockBody(false);
 }
 
 function adjustStock(t, sign) {
@@ -1333,7 +1340,7 @@ function saveTransaction() {
     return;
   }
 
-  const lotId = type === 'ingreso' ? Number(document.getElementById('editLot').value) || null : null;
+  let lotId = type === 'ingreso' ? Number(document.getElementById('editLot').value) || null : null;
   const itemId = type === 'ingreso' ? Number(document.getElementById('editItem').value) || null : null;
   const qty = type === 'ingreso' ? (parseInt(document.getElementById('editQty').value) || 0) : 0;
   let cost = 0;
@@ -1485,11 +1492,13 @@ function openLotModal(id = null) {
     document.getElementById('deleteLotBtn').style.display = 'none';
   }
   document.getElementById('lotModalOverlay').classList.add('active');
+  lockBody(true);
 }
 
 function closeLotModal() {
   pendingGastoLotTxId = null;
   document.getElementById('lotModalOverlay').classList.remove('active');
+  lockBody(false);
 }
 
 function saveLot() {
@@ -1685,11 +1694,13 @@ function openCatModal(id = null) {
   document.getElementById('editCatPrice').value = p ? (p.priceText || (p.price != null ? formatEditValue(p.price) : '')) : '';
   document.getElementById('deleteCatBtn').style.display = p ? 'inline-block' : 'none';
   document.getElementById('catOverlay').classList.add('active');
+  lockBody(true);
   document.getElementById('editCatName').focus();
 }
 
 function closeCatModal() {
   document.getElementById('catOverlay').classList.remove('active');
+  lockBody(false);
 }
 
 function saveCatProduct() {
@@ -1738,11 +1749,13 @@ function openLotCatModal() {
   sel.innerHTML = opts;
   document.getElementById('lotCatHint').textContent = '';
   document.getElementById('lotCatOverlay').classList.add('active');
+  lockBody(true);
   onLotCatChange();
 }
 
 function closeLotCatModal() {
   document.getElementById('lotCatOverlay').classList.remove('active');
+  lockBody(false);
 }
 
 function onLotCatChange() {
@@ -1874,10 +1887,12 @@ function openReport() {
   buildReportMonths();
   renderReport();
   document.getElementById('reportOverlay').classList.add('active');
+  lockBody(true);
 }
 
 function closeReport() {
   document.getElementById('reportOverlay').classList.remove('active');
+  lockBody(false);
 }
 
 function renderReport() {
@@ -1925,10 +1940,12 @@ function openCloudModal() {
   document.getElementById('cloudConfig').value = cloud && cloud.config ? JSON.stringify(cloud.config, null, 2) : '';
   setCloudStatus(cloudReady ? 'Conectado' : (typeof firebase === 'undefined' ? 'Firebase no cargado (revisa internet) o sin configurar.' : (cloud ? 'Config guardada. Pulsa “Subir datos” para subir.' : 'Sin configurar.')));
   document.getElementById('cloudOverlay').classList.add('active');
+  lockBody(true);
 }
 
 function closeCloudModal() {
   document.getElementById('cloudOverlay').classList.remove('active');
+  lockBody(false);
 }
 
 function parseFirebaseConfig(raw) {
@@ -2102,6 +2119,7 @@ function attachAuthObserver() {
       const isOwner = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
       document.body.classList.toggle('public', !isOwner);
       document.getElementById('adminOverlay').classList.remove('active');
+      lockBody(false);
       if (isOwner) {
         if (!cloud || !cloud.config) cloud = { config: FALLBACK_CONFIG, auto: true };
         cloud.auto = true;
@@ -2114,6 +2132,7 @@ function attachAuthObserver() {
       document.body.classList.remove('public');
       if (cloudWatcher) { cloudWatcher(); cloudWatcher = null; watchStarted = false; }
       document.getElementById('adminOverlay').classList.add('active');
+      lockBody(true);
     }
   });
 }
@@ -2148,6 +2167,7 @@ function startApp() {
 }
 
 document.getElementById('adminOverlay').classList.add('active');
+lockBody(true);
 loadCloud();
 </script>
 </body>
