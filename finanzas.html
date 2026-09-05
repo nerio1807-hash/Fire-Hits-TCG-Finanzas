@@ -552,7 +552,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-lotcost';
+const BUILD_VERSION = '2026-09-05-preventas-v3';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1978,6 +1978,13 @@ function syncPrevProds() {
 function renderPrevProds() {
   const box = document.getElementById('prevProdItems');
   if (!box) return;
+  if (!prevProdLines.length) {
+    box.innerHTML = '<div class="form-hint">Sin productos. Añade los que lleva el cliente con el botón de abajo.</div>';
+    const totEl = document.getElementById('prevProdTotal');
+    if (totEl) totEl.textContent = 'Total del pedido: ' + formatMoney(0);
+    updatePrevPend();
+    return;
+  }
   box.innerHTML = prevProdLines.map((ln, k) => `
     <div class="lot-item-row prev-prod-row" data-pp-row="${k}" style="flex-direction:column; align-items:stretch; border:1px solid #2a2a4a; padding:0.5rem; border-radius:8px; margin-bottom:0.5rem;">
       <div style="display:flex; gap:0.5rem;">
@@ -2058,25 +2065,30 @@ function updatePrevPend() {
 }
 
 function openPrevModal(id = null) {
-  const p = id ? preventas.find(x => x.id === Number(id)) : null;
-  document.getElementById('prevModalTitle').textContent = p ? 'Editar preventa' : 'Agregar preventa';
-  document.getElementById('editPrevId').value = p ? p.id : '';
-  document.getElementById('editPrevClient').value = p ? p.client : '';
-  document.getElementById('editPrevNotes').value = p ? p.notes : '';
-  document.getElementById('editPrevStatus').value = p ? p.status : 'pending';
-  document.getElementById('deletePrevBtn').style.display = p ? 'inline-block' : 'none';
-  prevProdLines = (p && Array.isArray(p.lines) ? p.lines.map(l => ({ lotId: l.lotId, itemId: l.itemId, qty: l.qty || 1, price: l.price != null ? l.price : null })) : []);
-  document.getElementById('editPrevTotal').value = p ? formatEditValue(p.total) : '';
-  const paySel = document.getElementById('editPrevPay');
-  if (!p || (!p.p1 && !p.p2)) paySel.value = 'none';
-  else if ((Number(p.p2) || 0) <= 0 && (Number(p.p1) || 0) > 0) paySel.value = 'full';
-  else paySel.value = 'seal';
-  const p1raw = document.getElementById('editPrevP1');
-  if (p && paySel.value === 'seal') { p1raw.value = formatEditValue(p.p1); }
-  else p1raw.value = '';
-  renderPrevProds();
-  if (p && p.lines) { recalcPrevProds(); }
-  onPrevPayChange();
+  try {
+    const p = id ? preventas.find(x => x.id === Number(id)) : null;
+    document.getElementById('prevModalTitle').textContent = p ? 'Editar preventa' : 'Agregar preventa';
+    document.getElementById('editPrevId').value = p ? p.id : '';
+    document.getElementById('editPrevClient').value = p ? p.client : '';
+    document.getElementById('editPrevNotes').value = p ? p.notes : '';
+    document.getElementById('editPrevStatus').value = p ? p.status : 'pending';
+    document.getElementById('deletePrevBtn').style.display = p ? 'inline-block' : 'none';
+    prevProdLines = (p && Array.isArray(p.lines) ? p.lines.map(l => ({ lotId: l.lotId, itemId: l.itemId, qty: l.qty || 1, price: l.price != null ? l.price : null })) : []);
+    document.getElementById('editPrevTotal').value = p ? formatEditValue(p.total) : '';
+    const paySel = document.getElementById('editPrevPay');
+    if (!p || (!p.p1 && !p.p2)) paySel.value = 'none';
+    else if ((Number(p.p2) || 0) <= 0 && (Number(p.p1) || 0) > 0) paySel.value = 'full';
+    else paySel.value = 'seal';
+    const p1raw = document.getElementById('editPrevP1');
+    if (p && paySel.value === 'seal') { p1raw.value = formatEditValue(p.p1); }
+    else p1raw.value = '';
+    renderPrevProds();
+    if (p && p.lines) { recalcPrevProds(); }
+    onPrevPayChange();
+  } catch (err) {
+    if (typeof console !== 'undefined' && console.error) console.error('openPrevModal:', err);
+    showToast('Error al abrir la preventa: ' + ((err && err.message) || err), true);
+  }
   document.getElementById('prevModalOverlay').classList.add('active');
   lockBody(true);
 }
