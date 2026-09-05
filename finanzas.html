@@ -632,9 +632,9 @@ function renderStats() {
   const projInv = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => {
       const un = Number(i.units) || 0;
       if (!un) return a;
-      const c = Number(i.cost) || 0;
       const p = catalog.products.find(x => (x.name || '').toLowerCase() === (i.name || '').toLowerCase());
-      const unit = catSalePrice(p) || c;
+      const unit = catSalePrice(p);
+      if (unit == null) return a;
       return a + unit * un;
     }, 0), 0);
   const currentTotal = cash + invValue;
@@ -643,7 +643,7 @@ function renderStats() {
     <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">Ingresos ${formatMoney(totalIn)} − Gastos ${formatMoney(totalOut)}</div></div>
     <div class="stat-card"><h3>📦 Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que pagaste por los productos sin vender</div></div>
     <div class="stat-card"><h3>💼 Total actual del negocio</h3><p class="big ${currentTotal >= 0 ? 'c-green' : 'c-red'}">${formatMoney(currentTotal)}</p><div class="sub">Caja + costo del inventario</div></div>
-    <div class="stat-card"><h3>🎯 Proyección al vender todo</h3><p class="big ${projected >= 0 ? 'c-green' : 'c-red'}">${formatMoney(projected)}</p><div class="sub">Caja + precios sugeridos del catálogo</div></div>
+    <div class="stat-card"><h3>🎯 Proyección al vender todo</h3><p class="big ${projected >= 0 ? 'c-green' : 'c-red'}">${formatMoney(projected)}</p><div class="sub">Caja + precio de venta de tu inventario</div></div>
   `;
   document.getElementById('stats').innerHTML = `
     <div class="stat-card"><h3>Ingresos totales</h3><p class="c-green">${formatMoney(totalIn)}</p></div>
