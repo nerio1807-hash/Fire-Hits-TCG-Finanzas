@@ -203,6 +203,7 @@ body.public .admin-only { display: none !important; }
   <div class="page" id="page-catalogo">
     <div class="toolbar">
       <button class="btn btn-primary admin-only" onclick="openCatModal()">+ Agregar producto</button>
+      <button class="btn btn-secondary admin-only" onclick="openLotCatModal()">Desde un lote</button>
     </div>
     <div class="panel full">
       <h2>Catálogo de productos</h2>
@@ -330,6 +331,23 @@ body.public .admin-only { display: none !important; }
       <button class="btn btn-danger" id="deleteCatBtn" style="display:none;" onclick="deleteCatFromModal()">Eliminar</button>
       <button class="btn btn-secondary" onclick="closeCatModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveCatProduct()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="lotCatOverlay">
+  <div class="modal">
+    <h2>Añadir productos al catálogo desde un lote</h2>
+    <div class="form-group">
+      <label>Lote</label>
+      <select id="lotCatSel" onchange="onLotCatChange()"></select>
+    </div>
+    <label class="items-label">Marca los productos que quieres añadir</label>
+    <div id="lotCatItems" style="max-height:45vh; overflow:auto;"></div>
+    <div class="form-hint" id="lotCatHint"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeLotCatModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveLotCat()">Añadir seleccionados</button>
     </div>
   </div>
 </div>
@@ -1136,6 +1154,7 @@ function saveTransaction() {
   const desc = document.getElementById('editDesc').value.trim();
   const date = document.getElementById('editDate').value || todayStr();
   if (amount <= 0) { showToast('Ingresa un monto válido', true); return; }
+  let soldItem = null;
   if (type === 'ingreso') {
     if (!lotId) { showToast('Selecciona a qué lote pertenece la venta', true); return; }
     const item = getItemInLot(lotId, itemId);
@@ -1143,6 +1162,7 @@ function saveTransaction() {
     if (qty <= 0) { showToast('Ingresa las unidades vendidas', true); return; }
     if (qty > (Number(item.units) || 0)) { showToast('No hay suficientes unidades del producto', true); return; }
     cost = (item.cost || 0) * qty;
+    soldItem = { name: item.name, units: Number(item.units) || 0 };
   }
   const id = document.getElementById('editId').value;
   let linkNewLot = false;
@@ -1172,7 +1192,8 @@ function saveTransaction() {
   saveTx();
   render();
   closeModal();
-  showToast(id ? 'Movimiento actualizado' : 'Movimiento registrado');
+  const stockMsg = soldItem ? ' · Quedan ' + Math.max(0, soldItem.units - qty) + ' und de "' + soldItem.name + '"' : '';
+  showToast((id ? 'Movimiento actualizado' : 'Movimiento registrado') + stockMsg);
   if (linkNewLot) {
     pendingGastoLotTxId = id ? Number(id) : data.id;
     openLotModal();
@@ -1525,6 +1546,78 @@ function deleteCatFromModal() {
   }
 }
 
+function openLotCatModal() {
+  const sel = document.getElementById('lotCatSel');
+  let opts = '<option value="">— Elige un lote —</option>';
+  lots.forEach(l => {
+    opts += `<option value="${l.id}">${escapeHtml(l.name)}</option>`;
+  });
+  sel.innerHTML = opts;
+  document.getElementById('lotCatHint').textContent = '';
+  document.getElementById('lotCatOverlay').classList.add('active');
+  onLotCatChange();
+}
+
+function closeLotCatModal() {
+  document.getElementById('lotCatOverlay').classList.remove('active');
+}
+
+function onLotCatChange() {
+  const lotId = Number(document.getElementById('lotCatSel').value) || null;
+  const box = document.getElementById('lotCatItems');
+  const hint = document.getElementById('lotCatHint');
+  const lot = getLot(lotId);
+  if (!lot || !(lot.items || []).length) {
+    box.innerHTML = '<div class="form-hint">Ese lote no tiene productos.</div>';
+    hint.textContent = '';
+    return;
+  }
+  const items = lot.items.filter(i => i && i.name);
+  box.innerHTML = items.map((i, k) => {
+    const un = Number(i.units) || 0;
+    const cost = Number(i.cost) || 0;
+    const total = cost * un;
+    return `
+      <label class="lot-item-row" style="cursor:pointer; align-items:flex-start;">
+        <input type="checkbox" data-lotcat-row="${k}" checked>
+        <span style="flex:1; font-size:0.85rem;">
+          <b>${escapeHtml(i.name)}</b><br>
+          <span style="color:#888;">
+            Costo/und ${formatMoney(cost)} · ${un} und · <b style="color:#95d5b2;">Total ${formatMoney(total)}</b>
+          </span>
+        </span>
+      </label>`;
+  }).join('');
+  const inCat = items.filter(i => catalog.products.some(p => (p.name || '').toLowerCase() === (i.name || '').toLowerCase())).length;
+  hint.textContent = inCat ? inCat + ' de estos productos ya están en el catálogo (se omitirán, pero puedes actualizar su costo si el dato cambió).' : '';
+  hint.style.color = inCat ? '#e0c368' : '#888';
+}
+
+function saveLotCat() {
+  const lotId = Number(document.getElementById('lotCatSel').value) || null;
+  const lot = getLot(lotId);
+  if (!lot) { showToast('Elige el lote', true); return; }
+  const items = (lot.items || []).filter(i => i && i.name);
+  const checks = document.querySelectorAll('#lotCatItems input[type="checkbox"]:checked');
+  const names = [];
+  checks.forEach(c => {
+    const i = items[Number(c.dataset.lotcatRow)];
+    if (i) names.push(i);
+  });
+  if (!names.length) { showToast('Marca al menos un producto', true); return; }
+  let added = 0;
+  names.forEach(i => {
+    if (catalog.products.some(p => (p.name || '').toLowerCase() === (i.name || '').toLowerCase())) return;
+    catalog.products.push({ id: nextCatId(), name: i.name, cost: Number(i.cost) || 0, costText: i.costText || formatEditValue(i.cost), price: null, priceText: '', margin: null });
+    added++;
+  });
+  saveCatalog();
+  fillCatNamesDatalist();
+  render();
+  closeLotCatModal();
+  showToast(added ? added + ' producto(s) añadido(s) al catálogo' : 'Esos productos ya estaban en el catálogo');
+}
+
 function buildReportMonths() {
   const sel = document.getElementById('reportMonth');
   const now = new Date();
@@ -1783,6 +1876,9 @@ document.getElementById('lotModalOverlay').addEventListener('click', function(e)
 document.getElementById('catOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeCatModal();
 });
+document.getElementById('lotCatOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeLotCatModal();
+});
 document.getElementById('reportOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeReport();
 });
@@ -1790,7 +1886,7 @@ document.getElementById('cloudOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeCloudModal();
 });
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeReport(); closeCloudModal(); }
+  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); }
 });
 window.addEventListener('storage', function(e) {
   if (e.key === STORE_TX || e.key === STORE_LOTS || e.key === STORE_CAT) { loadTx(); loadLots(); loadCatalog(); render(); }
