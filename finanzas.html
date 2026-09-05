@@ -580,7 +580,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v10';
+const BUILD_VERSION = '2026-09-05-preventas-v11';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1962,27 +1962,115 @@ function renderLotItems() {
 function handleLotExcel(input) {
   const file = input.files && input.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    try {
-      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      const parsed = parseExcelRows(rows);
-      if (!parsed.length) { showToast('No encontré productos con nombre en el Excel. Revisá las columnas (nombre del producto, unidades, costo unitario).', true); input.value = ''; return; }
-      lotItemsDraft = parsed.map(p => ({ id: nextItemId(), name: p.name, cost: p.cost, costText: p.costText, units: p.units }));
-      renderLotItems();
-      const info = document.getElementById('lotExcelInfo');
-      info.style.display = 'block';
-      info.innerHTML = '<div class="form-hint"><b>' + parsed.length + ' producto(s)</b> cargados desde <b>' + escapeHtml(file.name) + '</b>. Revisá los costos y ajustá el nombre del lote antes de guardar. <a href="javascript:void(0)" onclick="clearLotExcel()" style="color:#f6a6a6;">Quitar</a></div>';
-      if (!document.getElementById('editLotName').value) document.getElementById('editLotName').value = defaultLotName(file.name);
-      openLotModal(null, true);
-    } catch (err) {
-      if (typeof console !== 'undefined' && console.error) console.error(err);
-      showToast('No pude leer el archivo. Asegurate de que sea un Excel (.xlsx/.xls) o CSV válido.', true);
-    } finally { input.value = ''; }
-  };
-  reader.readAsArrayBuffer(file);
+  loadXLSX(function () {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const parsed = parseWorkbookSheet(ws);
+        if (!parsed.length) { showToast('No encontré productos con nombre en el Excel. Revisá que tenga columnas: nombre del producto, unidades y costo unitario.', true); input.value = ''; return; }
+        lotItemsDraft = parsed.map(p => ({ id: nextItemId(), name: p.name, cost: p.cost, costText: p.costText, units: p.units }));
+        renderLotItems();
+        const info = document.getElementById('lotExcelInfo');
+        info.style.display = 'block';
+        info.innerHTML = '<div class="form-hint"><b>' + parsed.length + ' producto(s)</b> cargados desde <b>' + escapeHtml(file.name) + '</b>. Revisá los costos y ajustá el nombre del lote antes de guardar. <a href="javascript:void(0)" onclick="clearLotExcel()" style="color:#f6a6a6;">Quitar</a></div>';
+        if (!document.getElementById('editLotName').value) document.getElementById('editLotName').value = defaultLotName(file.name);
+        openLotModal(null, true);
+      } catch (err) {
+        if (typeof console !== 'undefined' && console.error) console.error(err);
+        showToast('No pude leer el archivo. Asegurate de que sea un Excel (.xlsx/.xls) o CSV válido.', true);
+      } finally { input.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+var __xlsxLoading = null;
+function loadXLSX(cb) {
+  if (typeof XLSX !== 'undefined') { if (cb) cb(); return; }
+  if (__xlsxLoading === 'loading') { setTimeout(function () { loadXLSX(cb); }, 120); return; }
+  const urls = [
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+  ];
+  __xlsxLoading = 'loading';
+  function tryNext(i) {
+    if (i >= urls.length) {
+      __xlsxLoading = null;
+      showToast('No se pudo cargar la librería para leer Excel. Revisá tu conexión a internet e intentá de nuevo.', true);
+      return;
+    }
+    if (!document.head) { __xlsxLoading = null; showToast('El navegador no permite cargar la librería de Excel aquí.', true); return; }
+    const s = document.createElement('script');
+    s.src = urls[i];
+    s.onload = function () {
+      __xlsxLoading = null;
+      if (typeof XLSX !== 'undefined') { if (cb) cb(); } else { tryNext(i + 1); }
+    };
+    s.onerror = function () { tryNext(i + 1); };
+    document.head.appendChild(s);
+  }
+  tryNext(0);
+}
+
+function parseWorkbookSheet(ws) {
+  let parsed = parseExcelRows(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+  if (parsed.length) return parsed;
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+  const h = findHeaderRow(raw);
+  if (h !== -1) {
+    const parsed2 = parseExcelRows(rowsWithHeaders(raw, h));
+    if (parsed2.length) return parsed2;
+  }
+  return parsePositionalRows(raw);
+}
+
+function findHeaderRow(raw) {
+  const limit = Math.min(raw.length, 25);
+  for (let r = 0; r < limit; r++) {
+    const row = raw[r] || [];
+    if (!row.length) continue;
+    let scored = 0;
+    for (let i = 0; i < row.length; i++) {
+      const s = String(row[i] == null ? '' : row[i]).trim().toLowerCase();
+      if (!s) continue;
+      if (s.indexOf('nombre') !== -1 || s.indexOf('producto') !== -1 || s.indexOf('articulo') !== -1 || s.indexOf('name') !== -1) scored++;
+      else if (s.indexOf('unidad') !== -1 || s.indexOf('cantidad') !== -1 || s === 'und' || s.indexOf('qty') !== -1) scored++;
+      else if (s.indexOf('costo') !== -1 || s.indexOf('cost') !== -1 || s.indexOf('precio') !== -1) scored++;
+    }
+    if (scored >= 2) return r;
+  }
+  return -1;
+}
+
+function rowsWithHeaders(raw, headerIdx) {
+  const hrow = raw[headerIdx] || [];
+  const keys = hrow.map((c, i) => String(c == null ? '' : c).trim() || ('col' + (i + 1)));
+  const out = [];
+  for (let r = headerIdx + 1; r < raw.length; r++) {
+    const row2 = raw[r] || [];
+    if (!row2.length) continue;
+    const o = {};
+    for (let i = 0; i < keys.length; i++) o[keys[i]] = row2[i] != null ? row2[i] : '';
+    out.push(o);
+  }
+  return out;
+}
+
+function parsePositionalRows(raw) {
+  const out = [];
+  for (const row of raw) {
+    if (!row) continue;
+    const name = String(row[0] == null ? '' : row[0]).trim();
+    if (!name) continue;
+    let units = parseInt(String(row[1] == null ? '' : row[1]).replace(/[^\d]/g, '')) || 1;
+    if (units < 1) units = 1;
+    const cost = parseExcelNumber(row[2]);
+    out.push({ name, units, cost, costText: cost == null ? '' : formatEditValue(cost) });
+  }
+  return out;
 }
 
 function parseExcelRows(rows) {
