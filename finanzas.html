@@ -67,6 +67,7 @@ tr:hover td { background: #1c1c30; }
 .badge-ingreso { background: #1b4332; color: #95d5b2; }
 .badge-gasto { background: #6a040f; color: #ff8a8a; }
 .badge-lote { background: #2a2a4a; color: #a8a8d0; }
+.badge-pedido { background: #4a3520; color: #ffd28a; }
 .badge-agotado { background: #3a3a5a; color: #bbb; }
 .amount-in { color: #95d5b2; font-weight: 700; }
 .amount-out { color: #e63946; font-weight: 700; }
@@ -287,6 +288,12 @@ body.public .admin-only { display: none !important; }
       <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
         <input type="checkbox" id="multiSaleMode" onchange="onMultiSaleToggle()" style="margin:0;">
         <span>Esta venta incluye varios productos</span>
+      </label>
+    </div>
+    <div class="form-group" id="pedidoGroup" style="display:none;">
+      <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
+        <input type="checkbox" id="pedidoMode" onchange="onPedidoToggle()" style="margin:0;">
+        <span>Es un pedido / encargo por adelantado (solo dinero, no descuenta inventario)</span>
       </label>
     </div>
     <div class="form-group" id="lotGroup">
@@ -793,10 +800,11 @@ function movementRowsHTML(sorted) {
     const item = getItemInLot(t.lotId, t.itemId);
     const prod = item ? item.name : '';
     const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
+    const prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
     return `<tr>
       <td>${dLabel}</td>
       <td><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
-      <td>${t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—')}</td>
+      <td>${prodCell}</td>
       <td>${escapeHtml(t.category || '-')}</td>
       <td>${escapeHtml(t.desc || '-')}</td>
       <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
@@ -1087,12 +1095,14 @@ function fillCategories() {
 
 function toggleCostField() {
   const isIncome = document.getElementById('editType').value === 'ingreso';
-  const multi = isIncome && document.getElementById('multiSaleMode').checked;
-  document.getElementById('lotGroup').style.display = (isIncome && !multi) ? 'block' : 'none';
-  document.getElementById('itemGroup').style.display = (isIncome && !multi) ? 'block' : 'none';
-  document.getElementById('discountGroup').style.display = (isIncome && !multi) ? 'block' : 'none';
+  const pedido = isIncome && document.getElementById('pedidoMode').checked;
+  const multi = isIncome && !pedido && document.getElementById('multiSaleMode').checked;
+  document.getElementById('pedidoGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('lotGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
+  document.getElementById('itemGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
+  document.getElementById('discountGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
   document.getElementById('gastoLinkGroup').style.display = isIncome ? 'none' : 'block';
-  document.getElementById('multiModeGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('multiModeGroup').style.display = (isIncome && !pedido) ? 'block' : 'none';
   document.getElementById('multiSaleGroup').style.display = multi ? 'block' : 'none';
   if (multi) {
     document.getElementById('qtyGroup').style.display = 'none';
@@ -1100,6 +1110,13 @@ function toggleCostField() {
     document.getElementById('suggestGroup').style.display = 'none';
     document.getElementById('gainHint').textContent = '';
     if (!multiSaleLines.length) addMultiSaleRow();
+  } else if (pedido) {
+    document.getElementById('qtyGroup').style.display = 'none';
+    document.getElementById('itemCostHint').textContent = '';
+    document.getElementById('suggestGroup').style.display = 'none';
+    document.getElementById('gainHint').textContent = '';
+    document.getElementById('editCategory').placeholder = 'Escribe o elige...';
+    if (!document.getElementById('editCategory').value) document.getElementById('editCategory').value = 'Pedido';
   } else if (isIncome) {
     fillLotSelect(Number(document.getElementById('editLot').value) || null, true);
     onLotChange();
@@ -1112,8 +1129,17 @@ function toggleCostField() {
   if (isIncome) updateGainHint();
 }
 
+function onPedidoToggle() {
+  if (document.getElementById('pedidoMode').checked) {
+    document.getElementById('multiSaleMode').checked = false;
+    multiSaleLines = [];
+  }
+  toggleCostField();
+}
+
 function onMultiSaleToggle() {
   if (!document.getElementById('multiSaleMode').checked) multiSaleLines = [];
+  if (document.getElementById('multiSaleMode').checked) document.getElementById('pedidoMode').checked = false;
   toggleCostField();
 }
 
@@ -1376,6 +1402,7 @@ function openModal(id = null) {
     document.getElementById('deleteBtn').style.display = 'inline-block';
     document.getElementById('editGastoLink').value = existing.lotId ? 'existing' : '';
     document.getElementById('editGastoLot').value = existing.lotId || '';
+    document.getElementById('pedidoMode').checked = !!existing.pedido;
   } else {
     document.getElementById('editId').value = '';
     document.getElementById('editType').value = 'gasto';
@@ -1390,6 +1417,7 @@ function openModal(id = null) {
     document.getElementById('deleteBtn').style.display = 'none';
     document.getElementById('editGastoLink').value = '';
     document.getElementById('editGastoLot').value = '';
+    document.getElementById('pedidoMode').checked = false;
   }
   document.getElementById('editGastoProdName').value = '';
   document.getElementById('editGastoProdQty').value = '1';
@@ -1421,15 +1449,16 @@ function saveTransaction() {
   if (Date.now() < txSaveGuard) { showToast('Espera un segundo...', true); return; }
   txSaveGuard = Date.now() + 700;
   const type = document.getElementById('editType').value;
+  const pedido = type === 'ingreso' && document.getElementById('pedidoMode').checked;
   const inMonto = parseAmount(document.getElementById('editAmount').value);
-  const discount = type === 'ingreso' ? (parseAmount(document.getElementById('editDiscount').value) || 0) : 0;
+  const discount = (type === 'ingreso' && !pedido) ? (parseAmount(document.getElementById('editDiscount').value) || 0) : 0;
   const amount = type === 'ingreso' ? inMonto - discount : inMonto;
-  const category = document.getElementById('editCategory').value.trim();
+  const category = document.getElementById('editCategory').value.trim() || (pedido ? 'Pedido' : '');
   const desc = document.getElementById('editDesc').value.trim();
   const date = document.getElementById('editDate').value || todayStr();
   const id = document.getElementById('editId').value;
 
-  if (type === 'ingreso' && document.getElementById('multiSaleMode').checked) {
+  if (type === 'ingreso' && !pedido && document.getElementById('multiSaleMode').checked) {
     syncMultiSaleFromDom();
     const rows = document.querySelectorAll('#multiSaleItems .multi-line-row');
     const evts = [];
@@ -1462,13 +1491,13 @@ function saveTransaction() {
     return;
   }
 
-  let lotId = type === 'ingreso' ? Number(document.getElementById('editLot').value) || null : null;
-  const itemId = type === 'ingreso' ? Number(document.getElementById('editItem').value) || null : null;
-  const qty = type === 'ingreso' ? (parseInt(document.getElementById('editQty').value) || 0) : 0;
+  let lotId = (type === 'ingreso' && !pedido) ? Number(document.getElementById('editLot').value) || null : null;
+  const itemId = (type === 'ingreso' && !pedido) ? Number(document.getElementById('editItem').value) || null : null;
+  const qty = (type === 'ingreso' && !pedido) ? (parseInt(document.getElementById('editQty').value) || 0) : 0;
   let cost = 0;
   if (amount <= 0) { showToast('Ingresa un monto válido', true); return; }
   let soldItem = null;
-  if (type === 'ingreso') {
+  if (type === 'ingreso' && !pedido) {
     if (!lotId) { showToast('Selecciona a qué lote pertenece la venta', true); return; }
     const item = getItemInLot(lotId, itemId);
     if (!item) { showToast('Selecciona el producto vendido', true); return; }
@@ -1499,7 +1528,8 @@ function saveTransaction() {
       linkNewLot = true;
     }
   }
-  const data = { type, amount, cost: type === 'ingreso' ? cost : 0, discount, lotId, itemId, qty, category, desc, date };
+  const data = { type, amount, cost: (type === 'ingreso' && !pedido) ? cost : 0, discount, lotId, itemId, qty, category, desc, date };
+  if (pedido) data.pedido = 1;
   if (id) {
     const idx = transactions.findIndex(t => t.id === Number(id));
     if (idx !== -1) {
