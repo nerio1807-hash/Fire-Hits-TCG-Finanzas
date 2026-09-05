@@ -387,13 +387,13 @@ body.public .admin-only { display: none !important; }
       <label>El cliente pagó...</label>
       <select id="editPrevPay" onchange="onPrevPayChange()">
         <option value="none">Nada todavía</option>
-        <option value="seal">La primera parte (seña)</option>
+        <option value="seal">Solo la primera parte (50%)</option>
         <option value="full">Todo (pago completo)</option>
       </select>
     </div>
     <div class="form-group" id="prevP1Group" style="display:none;">
-      <label>Primera parte (seña)</label>
-      <input type="text" id="editPrevP1" placeholder="Ej: 100,00" inputmode="decimal" oninput="updatePrevPend()" onblur="formatFieldOnBlur(this);updatePrevPend()">
+      <label>Primera parte (50%)</label>
+      <input type="text" id="editPrevP1" readonly style="background:#12122a; color:#95d5b2;" placeholder="$0,00">
     </div>
     <div class="form-group" id="prevP2Group" style="display:none;">
       <label>Falta por pagar (resto)</label>
@@ -552,7 +552,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v3';
+const BUILD_VERSION = '2026-09-05-preventas-v4';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -588,6 +588,7 @@ let multiSaleLines = [];
 const STORE_PREV = 'firehits_preventas';
 let preventas = [];
 let prevProdLines = [];
+let prevTotalAuto = '';
 const FALLBACK_CONFIG = {
   apiKey: "AIzaSyCAKT0drwtgTqc05du8jZPwDRQaPIzv8Zo",
   authDomain: "fire-hits-tcg-finanzas.firebaseapp.com",
@@ -2014,30 +2015,48 @@ function recalcPrevProds() {
   const totEl = document.getElementById('prevProdTotal');
   if (totEl) totEl.textContent = 'Total del pedido: ' + formatMoney(total);
   const t = document.getElementById('editPrevTotal');
-  if (t) { if (t.value === '') t.value = formatEditValue(total); }
-  updatePrevPend();
+  if (t) {
+    const cur = String(t.value || '');
+    const shouldAuto = cur === '' || (prevTotalAuto && cur === prevTotalAuto);
+    if (shouldAuto) {
+      if (total > 0) { t.value = formatEditValue(total); prevTotalAuto = t.value; }
+      else { t.value = ''; prevTotalAuto = ''; }
+    } else {
+      prevTotalAuto = '';
+    }
+  }
+  onPrevPayChange();
 }
 
-function onPrevPayChange() {
+function prevPayUI() {
   const pay = document.getElementById('editPrevPay').value;
   const p1g = document.getElementById('prevP1Group');
   const p2g = document.getElementById('prevP2Group');
-  const p1 = document.getElementById('editPrevP1');
-  const prog = document.getElementById('editPrevTotal');
-  const total = parseAmount(prog.value);
+  if (pay === 'seal') { p1g.style.display = 'block'; p2g.style.display = 'block'; }
+  else if (pay === 'full') { p1g.style.display = 'none'; p2g.style.display = 'block'; }
+  else { p1g.style.display = 'none'; p2g.style.display = 'block'; }
+}
+
+function prevPayTotal() {
+  return parseAmount(document.getElementById('editPrevTotal').value);
+}
+
+function onPrevPayChange() {
+  prevPayUI();
+  const total = prevPayTotal();
+  const pay = document.getElementById('editPrevPay').value;
+  const p1raw = document.getElementById('editPrevP1');
+  const p2el = document.getElementById('editPrevP2');
   if (pay === 'full') {
-    p1g.style.display = 'none';
-    p2g.style.display = 'block';
-    p1.value = total > 0 ? formatEditValue(total) : '';
-    document.getElementById('editPrevP2').value = '0,00';
+    p1raw.value = total > 0 ? formatEditValue(total) : '';
+    p2el.value = '0,00';
   } else if (pay === 'seal') {
-    p1g.style.display = 'block';
-    p2g.style.display = 'block';
+    const half = Math.round(total * 50) / 100;
+    p1raw.value = total > 0 ? formatEditValue(half) : '';
+    p2el.value = total > 0 ? formatEditValue(Math.max(0, total - half)) : '0,00';
   } else {
-    p1g.style.display = 'none';
-    p2g.style.display = 'block';
-    p1.value = '';
-    document.getElementById('editPrevP2').value = total > 0 ? formatEditValue(total) : '0,00';
+    p1raw.value = '';
+    p2el.value = total > 0 ? formatEditValue(total) : '0,00';
   }
   updatePrevPend();
 }
@@ -2045,28 +2064,31 @@ function onPrevPayChange() {
 function updatePrevPend() {
   const hint = document.getElementById('prevPayHint');
   const pay = document.getElementById('editPrevPay').value;
-  const total = parseAmount(document.getElementById('editPrevTotal').value);
+  const total = prevPayTotal();
   const p1raw = document.getElementById('editPrevP1');
   const p2el = document.getElementById('editPrevP2');
+  const p1 = parseAmount(p1raw.value);
   if (pay === 'full') {
-    const pend = Math.max(0, total - total);
-    p2el.value = formatEditValue(Math.max(0, total - parseAmount(p1raw.value === '' ? total : p1raw.value)));
-    if (hint) hint.textContent = '✅ Pago completo: ' + formatMoney(total) + ' cubre el total de ' + formatMoney(total) + '. Falta por pagar: $0,00.';
+    p2el.value = '0,00';
+    if (hint) hint.textContent = total > 0 ? ('✅ Pago completo: ' + formatMoney(total) + ' · Falta por pagar: $0,00 (0%)') : '';
     return;
   }
-  const p1 = parseAmount(p1raw.value);
   const pend = Math.max(0, total - p1);
   p2el.value = formatEditValue(pend);
-  if (hint) {
-    if (!total && !p1) { hint.textContent = ''; return; }
-    if (pay === 'seal') hint.textContent = 'Seña de ' + formatMoney(p1) + ' · Falta por pagar: ' + formatMoney(pend);
-    else hint.textContent = 'Sin pago todavía · Falta por pagar: ' + formatMoney(pend);
+  if (!hint) return;
+  if (pay === 'seal') {
+    const pct = total > 0 ? Math.round(p1 / total * 100) : 0;
+    hint.textContent = total > 0 ? ('1ª parte: paga el ' + pct + '% (' + formatMoney(p1) + ') · Falta el otro ' + (100 - pct) + '%: ' + formatMoney(pend)) : '';
+  } else {
+    hint.textContent = total > 0 ? ('Sin pago todavía · Falta por pagar (100%): ' + formatMoney(total)) : '';
   }
 }
 
 function openPrevModal(id = null) {
   try {
     const p = id ? preventas.find(x => x.id === Number(id)) : null;
+    prevProdLines = (p && Array.isArray(p.lines) ? p.lines.map(l => ({ lotId: l.lotId, itemId: l.itemId, qty: l.qty || 1, price: l.price != null ? l.price : null })) : []);
+    prevTotalAuto = '';
     document.getElementById('prevModalTitle').textContent = p ? 'Editar preventa' : 'Agregar preventa';
     document.getElementById('editPrevId').value = p ? p.id : '';
     document.getElementById('editPrevClient').value = p ? p.client : '';
@@ -2084,7 +2106,8 @@ function openPrevModal(id = null) {
     else p1raw.value = '';
     renderPrevProds();
     if (p && p.lines) { recalcPrevProds(); }
-    onPrevPayChange();
+    prevPayUI();
+    updatePrevPend();
   } catch (err) {
     if (typeof console !== 'undefined' && console.error) console.error('openPrevModal:', err);
     showToast('Error al abrir la preventa: ' + ((err && err.message) || err), true);
@@ -2103,37 +2126,42 @@ function renderPrevTotal() {
 
 function closePrevModal() {
   document.getElementById('prevModalOverlay').classList.remove('active');
+  prevTotalAuto = '';
   lockBody(false);
 }
 
 function savePreventa() {
-  const id = document.getElementById('editPrevId').value;
-  const client = document.getElementById('editPrevClient').value.trim();
-  const status = document.getElementById('editPrevStatus').value;
-  const notes = document.getElementById('editPrevNotes').value.trim();
-  if (!client) { showToast('Escribe el nombre del cliente', true); return; }
-  syncPrevProds();
-  const total = parseAmount(document.getElementById('editPrevTotal').value);
-  const pay = document.getElementById('editPrevPay').value;
-  let p1 = parseAmount(document.getElementById('editPrevP1').value);
-  let p2 = parseAmount(document.getElementById('editPrevP2').value);
-  if (pay === 'full') { p1 = total; p2 = 0; }
-  else if (pay === 'seal') { p2 = Math.max(0, total - p1); }
-  else { p1 = 0; p2 = 0; }
-  if (!total && total !== 0) { showToast('Escribe el total a pagar (o añade productos)', true); return; }
-  const products = preventaProductsText({ lines: prevProdLines });
-  const data = { client, lines: prevProdLines.map(l => ({ ...l })), products, total, p1, p2, status, notes, date: (id ? (preventas.find(x => x.id === Number(id)) || {}).date : '') || todayStr() };
-  if (id) {
-    const idx = preventas.findIndex(x => x.id === Number(id));
-    if (idx !== -1) preventas[idx] = { ...preventas[idx], ...data, id: Number(id) };
-  } else {
-    data.id = getNextPrevId();
-    preventas.push(data);
+  try {
+    const id = document.getElementById('editPrevId').value;
+    const client = document.getElementById('editPrevClient').value.trim();
+    const status = document.getElementById('editPrevStatus').value;
+    const notes = document.getElementById('editPrevNotes').value.trim();
+    if (!client) { showToast('Escribe el nombre del cliente', true); return; }
+    syncPrevProds();
+    const total = parseAmount(document.getElementById('editPrevTotal').value);
+    const pay = document.getElementById('editPrevPay').value;
+    let p1 = 0, p2 = 0;
+    if (pay === 'full') { p1 = total; p2 = 0; }
+    else if (pay === 'seal') { p1 = Math.round(total * 50) / 100; p2 = Math.max(0, Math.round((total - p1) * 100) / 100); }
+    else { p1 = 0; p2 = Math.max(0, total); }
+    if (!total && total !== 0) { showToast('Escribe el total a pagar o añade productos para calcularlo', true); return; }
+    const products = preventaProductsText({ lines: prevProdLines });
+    const data = { client, lines: prevProdLines.map(l => ({ ...l })), products, total, p1, p2, status, notes, date: (id ? (preventas.find(x => x.id === Number(id)) || {}).date : '') || todayStr() };
+    if (id) {
+      const idx = preventas.findIndex(x => x.id === Number(id));
+      if (idx !== -1) preventas[idx] = { ...preventas[idx], ...data, id: Number(id) };
+    } else {
+      data.id = getNextPrevId();
+      preventas.push(data);
+    }
+    savePreventas();
+    render();
+    closePrevModal();
+    showToast('Preventa guardada · Pagado ' + (pay === 'full' ? 'completo' : pay === 'seal' ? '50%' : 'nada'));
+  } catch (err) {
+    if (typeof console !== 'undefined' && console.error) console.error('savePreventa:', err);
+    showToast('Error al guardar la preventa: ' + ((err && err.message) || err), true);
   }
-  savePreventas();
-  render();
-  closePrevModal();
-  showToast('Preventa guardada');
 }
 
 function deletePreventa(id) {
