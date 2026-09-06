@@ -137,7 +137,7 @@ body.public .admin-only { display: none !important; }
   header { flex-direction: column; align-items: stretch; text-align: center; padding: 1.1rem 1rem; }
   .actions { width: 100%; justify-content: center; }
   .actions .btn { flex: 0 1 auto; }
-  .tabs { display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0 0.5rem; scrollbar-width: none; }
+  .tabs { display: flex; overflow-x: auto; padding: 0 0.5rem; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tab { flex: 1 0 auto; padding: 0.8rem 0.9rem; font-size: 0.85rem; white-space: nowrap; }
   .grid2 { grid-template-columns: 1fr; gap: 0.85rem; }
@@ -146,7 +146,7 @@ body.public .admin-only { display: none !important; }
   .filters { width: 100%; }
   .filters label { flex-basis: 100%; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .filters select, .filters input { flex: 1 1 200px; font-size: 16px; }
-  .tablewrap { max-height: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  .tablewrap { max-height: none; overscroll-behavior-x: contain; }
   .tablewrap table { min-width: 540px; }
   .lot-group { overflow: hidden; }
   th, td { padding: 0.5rem 0.55rem; }
@@ -167,6 +167,33 @@ body.public .admin-only { display: none !important; }
   .form-actions { flex-wrap: wrap; }
   .form-actions .btn { flex: 1 1 45%; min-height: 42px; }
   .panel { padding: 0.9rem; }
+  #historyTable table, #movTable table { min-width: 0; }
+  #historyTable thead, #movTable thead { display: none; }
+  #historyTable tbody, #movTable tbody { display: block; }
+  #historyTable tr, #movTable tr {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 1rem;
+    background: #141425; border: 1px solid #2a2a4a; border-radius: 10px;
+    padding: 0.6rem 0.75rem; margin-bottom: 0.6rem;
+  }
+  #historyTable td, #movTable td {
+    border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent;
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left;
+  }
+  #historyTable tr:hover td, #movTable tr:hover td { background: transparent; }
+  #historyTable td::before, #movTable td::before {
+    content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase;
+    letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto;
+  }
+  #historyTable td[data-label="Descripción"], #movTable td[data-label="Descripción"] { grid-column: 1 / -1; }
+  #historyTable td[data-label="Acciones"], #movTable td[data-label="Acciones"] {
+    grid-column: 1 / -1; justify-content: flex-end; border-top: 1px solid #24243f;
+    padding-top: 0.4rem; margin-top: 0.2rem;
+  }
+  #historyTable td[data-label="Acciones"]::before, #movTable td[data-label="Acciones"]::before { display: none; }
+  #doughnutChart, #barChart { height: 170px; }
+  .lot-group .tablewrap table { min-width: 0; }
+  .lot-group th:nth-child(4), .lot-group td:nth-child(4) { display: none; }
+  .lot-group td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
   #lotItems .lot-item-row { flex-direction: column; align-items: stretch; }
   #lotItems .lot-item-row .btn { align-self: flex-end; }
   #multiSaleItems .multi-line-row > div, .prev-prod-row > div { flex-wrap: wrap; }
@@ -993,14 +1020,14 @@ function movementRowsHTML(sorted) {
     const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
     const prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
     return `<tr>
-      <td>${dLabel}</td>
-      <td><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
-      <td>${prodCell}</td>
-      <td>${escapeHtml(t.category || '-')}</td>
-      <td>${escapeHtml(t.desc || '-')}</td>
-      <td class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
-      <td class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
-      <td class="admin-only"><div class="td-actions">
+      <td data-label="Fecha">${dLabel}</td>
+      <td data-label="Tipo"><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
+      <td data-label="Producto">${prodCell}</td>
+      <td data-label="Categoría">${escapeHtml(t.category || '-')}</td>
+      <td data-label="Descripción">${escapeHtml(t.desc || '-')}</td>
+      <td data-label="Costo" class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
+      <td data-label="Monto" class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
+      <td data-label="Acciones" class="admin-only"><div class="td-actions">
         <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
         <button class="btn btn-danger btn-sm admin-only" onclick="deleteTransaction(${t.id})">Eliminar</button>
       </div></td>
