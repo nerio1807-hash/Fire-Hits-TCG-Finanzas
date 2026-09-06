@@ -192,6 +192,24 @@ body.public .admin-only { display: none !important; }
   }
   #historyTable td[data-label="Acciones"]::before, #movTable td[data-label="Acciones"]::before { display: none; }
   #doughnutChart, #barChart { height: 170px; }
+  #profitTable table { min-width: 0; }
+  #profitTable thead { display: none; }
+  #profitTable tbody { display: block; }
+  #profitTable tr {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.9rem;
+    background: #141425; border: 1px solid #2a2a4a; border-radius: 10px;
+    padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
+  }
+  #profitTable tr:hover td { background: transparent; }
+  #profitTable td {
+    border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent;
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left;
+  }
+  #profitTable td::before {
+    content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase;
+    letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto;
+  }
+  #profitTable td[data-label="Acumulado"] { grid-column: 1 / -1; }
   .lot-group .tablewrap table { min-width: 0; }
   .lot-group thead { display: none; }
   .lot-group tbody { display: block; }
@@ -283,6 +301,11 @@ body.public .admin-only { display: none !important; }
       <div class="panel">
         <h2>Ingresos vs Gastos (6 meses)</h2>
         <canvas id="barChart"></canvas>
+      </div>
+      <div class="panel full">
+        <h2>📈 Ganancia mes a mes</h2>
+        <div class="form-hint" style="margin-bottom:0.75rem;">Ganancia del mes = Ingresos − Gastos. Si un mes compraste inventario para reinvertir, ese gasto pesa en ese mes y se recupera cuando vendes.</div>
+        <div class="tablewrap" id="profitTable"></div>
       </div>
     </div>
   </div>
@@ -1084,6 +1107,44 @@ function renderCharts() {
   drawBarChart(months);
 }
 
+function renderMonthlyProfit() {
+  const wrap = document.getElementById('profitTable');
+  if (!wrap) return;
+  const now = new Date();
+  const rows = [];
+  let acum = 0;
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const inc = transactions.filter(t => t.type === 'ingreso' && (t.date || '').startsWith(ym)).reduce((s, t) => s + Number(t.amount), 0);
+    const exp = transactions.filter(t => t.type === 'gasto' && (t.date || '').startsWith(ym)).reduce((s, t) => s + Number(t.amount), 0);
+    const profit = inc - exp;
+    acum += profit;
+    rows.push({ label: MESES[d.getMonth()].slice(0, 3) + ' ' + String(d.getFullYear()).slice(2), current: d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(), inc, exp, profit, acum });
+  }
+  if (!transactions.length) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:1rem;"><h3>Sin datos</h3><p>Los movimientos de cada mes aparecerán aquí.</p></div>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="profit-table">
+      <thead>
+        <tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Ganancia del mes</th><th>Acumulado</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr${r.current ? ' style="background:#1c1c30;"' : ''}>
+            <td data-label="Mes">${r.label}${r.current ? ' <span class="badge badge-ok">actual</span>' : ''}</td>
+            <td data-label="Ingresos" class="c-green">${formatMoney(r.inc)}</td>
+            <td data-label="Gastos" class="c-red">${formatMoney(r.exp)}</td>
+            <td data-label="Ganancia" class="${r.profit >= 0 ? 'c-green' : 'c-red'}">${r.profit >= 0 ? '+' : '-'} ${formatMoney(Math.abs(r.profit))}</td>
+            <td data-label="Acumulado" class="c-white">${formatMoney(r.acum)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Ganancia acumulada de los últimos 6 meses: <b class="${acum >= 0 ? 'c-green' : 'c-red'}">${acum >= 0 ? '+' : '-'} ${formatMoney(Math.abs(acum))}</b></p>`;
+}
+
 function drawDoughnut(entries) {
   const canvas = document.getElementById('doughnutChart');
   const ctx = canvas.getContext('2d');
@@ -1252,6 +1313,7 @@ function render() {
   renderStats();
   renderHistory();
   renderCharts();
+  renderMonthlyProfit();
   renderLots();
   renderCatalog();
   fillCatNamesDatalist();
