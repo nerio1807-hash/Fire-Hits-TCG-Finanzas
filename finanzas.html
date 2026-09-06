@@ -60,7 +60,8 @@ header h1 span { color: #e63946; }
 .hist-head:hover { color: #95d5b2; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
   .filter-note { flex-basis: 100%; font-size: 0.85rem; color: #f1c40f; background: #1a1a2e; border: 1px dashed #f1c40f; border-radius: 8px; padding: 0.5rem 0.75rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.tablewrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.tablewrap { overflow-x: auto; max-height: 420px; overflow-y: auto; overscroll-behavior: contain; }
+.lot-group .tablewrap { max-height: none; overflow: visible; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 th { text-align: left; color: #888; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem; border-bottom: 1px solid #2a2a4a; position: sticky; top: 0; background: #1a1a2e; }
 td { padding: 0.5rem; border-bottom: 1px solid #16162a; white-space: nowrap; }
@@ -130,6 +131,29 @@ body.public .admin-only { display: none !important; }
   #printReport .pos { color: #1b7a3d; font-weight: 600; }
   #printReport .neg { color: #c1121f; font-weight: 600; }
 }
+@media (max-width: 1100px) {
+  .lot-group .tablewrap table { min-width: 0; }
+  .lot-group thead { display: none; }
+  .lot-group tbody { display: block; }
+  .lot-group tr {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.9rem;
+    background: #141425; border: 1px solid #2a2a4a; border-radius: 10px;
+    padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
+  }
+  .lot-group tr:hover td { background: transparent; }
+  .lot-group td {
+    border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent;
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left;
+  }
+  .lot-group td::before {
+    content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase;
+    letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto;
+  }
+  .lot-group td[data-label="Producto"] { grid-column: 1 / -1; }
+  .lot-group td[data-label="Valor"] { grid-column: 1 / -1; }
+  .lot-group td[data-label="Acciones"] { grid-column: 1 / -1; justify-content: flex-end; border-top: 1px solid #24243f; padding-top: 0.4rem; margin-top: 0.2rem; }
+  .lot-group td[data-label="Acciones"]::before { display: none; }
+}
 @media (max-width: 860px) {
   html { overflow-x: clip; }
   body { overflow-x: hidden; overflow-x: clip; }
@@ -148,8 +172,6 @@ body.public .admin-only { display: none !important; }
   .filters select, .filters input { flex: 1 1 200px; font-size: 16px; }
   .tablewrap { max-height: none; overscroll-behavior-x: contain; }
   .tablewrap table { min-width: 540px; }
-  .lot-group { overflow: visible; }
-  .lot-group .tablewrap { max-height: none; overflow: visible; }
   th, td { padding: 0.5rem 0.55rem; }
   input, select, textarea { font-size: 16px !important; }
   .toast { left: 1rem; right: 1rem; bottom: 1rem; text-align: center; }
@@ -211,27 +233,6 @@ body.public .admin-only { display: none !important; }
   }
   #profitTable td[data-label="Acumulado"] { grid-column: 1 / -1; }
   #profitTable td[data-label="Costo de lo vendido"], #profitTable td[data-label="Reinversión en lotes"] { grid-column: 1 / -1; }
-  .lot-group .tablewrap table { min-width: 0; }
-  .lot-group thead { display: none; }
-  .lot-group tbody { display: block; }
-  .lot-group tr {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.9rem;
-    background: #141425; border: 1px solid #2a2a4a; border-radius: 10px;
-    padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
-  }
-  .lot-group tr:hover td { background: transparent; }
-  .lot-group td {
-    border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent;
-    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left;
-  }
-  .lot-group td::before {
-    content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase;
-    letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto;
-  }
-  .lot-group td[data-label="Producto"] { grid-column: 1 / -1; }
-  .lot-group td[data-label="Valor"] { grid-column: 1 / -1; }
-  .lot-group td[data-label="Acciones"] { grid-column: 1 / -1; justify-content: flex-end; border-top: 1px solid #24243f; padding-top: 0.4rem; margin-top: 0.2rem; }
-  .lot-group td[data-label="Acciones"]::before { display: none; }
   #lotItems .lot-item-row { flex-direction: column; align-items: stretch; }
   #lotItems .lot-item-row .btn { align-self: flex-end; }
   #multiSaleItems .multi-line-row > div, .prev-prod-row > div { flex-wrap: wrap; }
