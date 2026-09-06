@@ -148,7 +148,8 @@ body.public .admin-only { display: none !important; }
   .filters select, .filters input { flex: 1 1 200px; font-size: 16px; }
   .tablewrap { max-height: none; overscroll-behavior-x: contain; }
   .tablewrap table { min-width: 540px; }
-  .lot-group { overflow: hidden; }
+  .lot-group { overflow: visible; }
+  .lot-group .tablewrap { max-height: none; overflow: visible; }
   th, td { padding: 0.5rem 0.55rem; }
   input, select, textarea { font-size: 16px !important; }
   .toast { left: 1rem; right: 1rem; bottom: 1rem; text-align: center; }
@@ -193,7 +194,7 @@ body.public .admin-only { display: none !important; }
   #doughnutChart, #barChart { height: 170px; }
   .lot-group .tablewrap table { min-width: 0; }
   .lot-group th:nth-child(4), .lot-group td:nth-child(4) { display: none; }
-  .lot-group td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  .lot-group td:first-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   #lotItems .lot-item-row { flex-direction: column; align-items: stretch; }
   #lotItems .lot-item-row .btn { align-self: flex-end; }
   #multiSaleItems .multi-line-row > div, .prev-prod-row > div { flex-wrap: wrap; }
