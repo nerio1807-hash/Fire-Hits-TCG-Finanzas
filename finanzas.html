@@ -193,8 +193,26 @@ body.public .admin-only { display: none !important; }
   #historyTable td[data-label="Acciones"]::before, #movTable td[data-label="Acciones"]::before { display: none; }
   #doughnutChart, #barChart { height: 170px; }
   .lot-group .tablewrap table { min-width: 0; }
-  .lot-group th:nth-child(4), .lot-group td:nth-child(4) { display: none; }
-  .lot-group td:first-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .lot-group thead { display: none; }
+  .lot-group tbody { display: block; }
+  .lot-group tr {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.9rem;
+    background: #141425; border: 1px solid #2a2a4a; border-radius: 10px;
+    padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
+  }
+  .lot-group tr:hover td { background: transparent; }
+  .lot-group td {
+    border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent;
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left;
+  }
+  .lot-group td::before {
+    content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase;
+    letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto;
+  }
+  .lot-group td[data-label="Producto"] { grid-column: 1 / -1; }
+  .lot-group td[data-label="Valor"] { grid-column: 1 / -1; }
+  .lot-group td[data-label="Acciones"] { grid-column: 1 / -1; justify-content: flex-end; border-top: 1px solid #24243f; padding-top: 0.4rem; margin-top: 0.2rem; }
+  .lot-group td[data-label="Acciones"]::before { display: none; }
   #lotItems .lot-item-row { flex-direction: column; align-items: stretch; }
   #lotItems .lot-item-row .btn { align-self: flex-end; }
   #multiSaleItems .multi-line-row > div, .prev-prod-row > div { flex-wrap: wrap; }
@@ -1217,11 +1235,11 @@ function renderLots() {
             ${items.map(i => {
               const units = Number(i.units) || 0;
               return `<tr>
-                <td>${escapeHtml(i.name)}</td>
-                <td>${units <= 0 ? '<span class="badge badge-agotado">Agotado</span>' : units + ' und'}</td>
-                <td>${formatMoney(i.cost)}</td>
-                <td class="${units > 0 ? 'c-green' : ''}">${formatMoney((i.cost || 0) * units)}</td>
-                <td class="admin-only"><button class="btn btn-danger btn-sm" onclick="deleteLotItem(${l.id}, ${i.id})">Quitar</button></td>
+                <td data-label="Producto">${escapeHtml(i.name)}</td>
+                <td data-label="Unidades">${units <= 0 ? '<span class="badge badge-agotado">Agotado</span>' : units + ' und'}</td>
+                <td data-label="Costo/und">${formatMoney(i.cost)}</td>
+                <td data-label="Valor" class="${units > 0 ? 'c-green' : ''}">${formatMoney((i.cost || 0) * units)}</td>
+                <td data-label="Acciones" class="admin-only"><button class="btn btn-danger btn-sm" onclick="deleteLotItem(${l.id}, ${i.id})">Quitar</button></td>
               </tr>`;
             }).join('')}
           </tbody>
