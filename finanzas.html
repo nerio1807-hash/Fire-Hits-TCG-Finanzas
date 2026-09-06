@@ -73,6 +73,7 @@ tr:hover td { background: #1c1c30; }
 .badge-pedido { background: #4a3520; color: #ffd28a; }
 .badge-ok { background: #1b4332; color: #95d5b2; }
 .badge-warn { background: #4a3520; color: #ffd28a; }
+.badge-hist { background: #3a3a5a; color: #a8a8d0; }
 .badge-agotado { background: #3a3a5a; color: #bbb; }
 .amount-in { color: #95d5b2; font-weight: 700; }
 .amount-out { color: #e63946; font-weight: 700; }
@@ -410,6 +411,13 @@ body.public .admin-only { display: none !important; }
         <div class="form-hint" id="gastoProdHint">Costo por unidad: $0,00</div>
       </div>
     </div>
+    <div class="form-group" id="histGastoGroup" style="display:none;">
+      <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
+        <input type="checkbox" id="histGasto" style="margin:0;">
+        <span>Este gasto <b>ya está pagado</b> (histórico): cuenta para la ganancia neta, pero <b>NO resta del dinero en caja</b>.</span>
+      </label>
+      <div class="form-hint">Úsalo para gastos viejos que ya salieron de tu bolsillo antes de llevar tu caja aquí. Pónle la fecha real del gasto para que cuadre el mes.</div>
+    </div>
     <div class="form-group" id="multiModeGroup" style="display:none;">
       <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
         <input type="checkbox" id="multiSaleMode" onchange="onMultiSaleToggle()" style="margin:0;">
@@ -669,7 +677,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-06-preventas-v15';
+const BUILD_VERSION = '2026-09-06-hist-v16';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -975,6 +983,7 @@ function renderStats() {
   const active = !!(fType || fMonth || fSearch);
   const totalIn = filtered.filter(t => t.type === 'ingreso').reduce((s,t) => s + Number(t.amount), 0);
   const totalOut = filtered.filter(t => t.type === 'gasto').reduce((s,t) => s + Number(t.amount), 0);
+  const cashOut = filtered.filter(t => t.type === 'gasto' && !t.hist).reduce((s,t) => s + Number(t.amount), 0);
   const invValue0 = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0), 0);
   const totalCost = invValue0;
   const gain = totalIn - totalCost;
@@ -983,7 +992,7 @@ function renderStats() {
   const monthKey = fMonth || ym;
   const monthIn = filtered.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + Number(t.amount), 0);
   const monthOut = filtered.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + Number(t.amount), 0);
-  const cash = openBalance + (totalIn - totalOut);
+  const cash = openBalance + (totalIn - cashOut);
   const invValue = invValue0;
   const projInv = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => {
       const un = Number(i.units) || 0;
@@ -1009,7 +1018,7 @@ function renderStats() {
     }
   }
   document.getElementById('cashBanner').innerHTML = `
-    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">${active ? 'Según los movimientos filtrados' : 'Saldo inicial ' + formatMoney(openBalance) + ' + Movimientos ' + formatMoney(totalIn - totalOut)}</div>${currentUser && currentUser.email && String(currentUser.email).toLowerCase() === OWNER_EMAIL.toLowerCase() ? '<button class="btn btn-secondary btn-sm admin-only" style="padding:0.15rem 0.5rem; font-size:0.7rem; margin-top:0.4rem;" onclick="setOpenBalance()">Poner saldo inicial</button>' : ''}</div>
+    <div class="stat-card"><h3>💰 Dinero en caja</h3><p class="big ${cash >= 0 ? 'c-green' : 'c-red'}">${formatMoney(cash)}</p><div class="sub">${active ? 'Según los movimientos filtrados' : 'Saldo inicial ' + formatMoney(openBalance) + ' + Movimientos ' + formatMoney(totalIn - cashOut)}</div>${currentUser && currentUser.email && String(currentUser.email).toLowerCase() === OWNER_EMAIL.toLowerCase() ? '<button class="btn btn-secondary btn-sm admin-only" style="padding:0.15rem 0.5rem; font-size:0.7rem; margin-top:0.4rem;" onclick="setOpenBalance()">Poner saldo inicial</button>' : ''}</div>
     <div class="stat-card"><h3>📦 Invertido en inventario</h3><p class="big c-white">${formatMoney(invValue)}</p><div class="sub">Lo que pagaste por los productos sin vender</div></div>
     <div class="stat-card"><h3>💼 Total actual del negocio</h3><p class="big ${currentTotal >= 0 ? 'c-green' : 'c-red'}">${formatMoney(currentTotal)}</p><div class="sub">Caja + costo del inventario</div></div>
     <div class="stat-card"><h3>🎯 Proyección al vender todo</h3><p class="big ${projected >= 0 ? 'c-green' : 'c-red'}">${formatMoney(projected)}</p><div class="sub">Caja + precio de venta de tu inventario</div></div>
@@ -1065,7 +1074,7 @@ function movementRowsHTML(sorted) {
     const prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
     return `<tr>
       <td data-label="Fecha">${dLabel}</td>
-      <td data-label="Tipo"><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span></td>
+      <td data-label="Tipo"><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>${t.hist ? ' <span class="badge badge-hist">Histórico</span>' : ''}</td>
       <td data-label="Producto">${prodCell}</td>
       <td data-label="Categoría">${escapeHtml(t.category || '-')}</td>
       <td data-label="Descripción">${escapeHtml(t.desc || '-')}</td>
@@ -1414,6 +1423,7 @@ function toggleCostField() {
   document.getElementById('itemGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
   document.getElementById('discountGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
   document.getElementById('gastoLinkGroup').style.display = isIncome ? 'none' : 'block';
+  document.getElementById('histGastoGroup').style.display = isIncome ? 'none' : 'block';
   document.getElementById('multiModeGroup').style.display = (isIncome && !pedido) ? 'block' : 'none';
   document.getElementById('multiSaleGroup').style.display = multi ? 'block' : 'none';
   if (multi) {
@@ -1794,6 +1804,7 @@ function openModal(id = null) {
     document.getElementById('editGastoLink').value = existing.lotId ? 'existing' : '';
     document.getElementById('editGastoLot').value = existing.lotId || '';
     document.getElementById('pedidoMode').checked = !!existing.pedido;
+    document.getElementById('histGasto').checked = !!existing.hist;
   } else {
     document.getElementById('editId').value = '';
     document.getElementById('editType').value = 'gasto';
@@ -1809,6 +1820,7 @@ function openModal(id = null) {
     document.getElementById('editGastoLink').value = '';
     document.getElementById('editGastoLot').value = '';
     document.getElementById('pedidoMode').checked = false;
+    document.getElementById('histGasto').checked = false;
   }
   document.getElementById('editGastoProdName').value = '';
   document.getElementById('editGastoProdQty').value = '1';
@@ -1921,6 +1933,7 @@ function saveTransaction() {
   }
   const data = { type, amount, cost: (type === 'ingreso' && !pedido) ? cost : 0, discount, lotId, itemId, qty, category, desc, date };
   if (pedido) data.pedido = 1;
+  if (type === 'gasto') data.hist = document.getElementById('histGasto').checked ? 1 : 0;
   if (id) {
     const idx = transactions.findIndex(t => t.id === Number(id));
     if (idx !== -1) {
@@ -2690,7 +2703,7 @@ function csvMoney(n) {
 }
 
 function exportCSV() {
-  const rows = [['Fecha', 'Tipo', 'Lote', 'Producto', 'Categoría', 'Descripción', 'Unidades', 'Costo', 'Monto']];
+  const rows = [['Fecha', 'Tipo', 'Lote', 'Producto', 'Categoría', 'Descripción', 'Unidades', 'Costo', 'Monto', 'Histórico']];
   [...transactions].sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(t => {
     const item = getItemInLot(t.lotId, t.itemId);
     const lot = getLot(t.lotId);
@@ -2703,7 +2716,8 @@ function exportCSV() {
       t.desc || '',
       t.qty || 0,
       t.type === 'ingreso' ? csvMoney(t.cost) : '',
-      csvMoney(t.amount)
+      csvMoney(t.amount),
+      t.hist ? 'Sí' : ''
     ]);
   });
   const csv = rows.map(r => r.map(csvCell).join(';')).join('\n');
