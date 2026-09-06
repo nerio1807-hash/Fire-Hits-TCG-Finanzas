@@ -316,23 +316,6 @@ body.public .admin-only { display: none !important; }
         <span>Es un pedido / encargo por adelantado (solo dinero, no descuenta inventario)</span>
       </label>
     </div>
-    <div class="form-group" id="preventaPayGroup" style="display:none;">
-      <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
-        <input type="checkbox" id="preventaPayMode" onchange="onPreventaPayToggle()" style="margin:0;">
-        <span>Es el pago de una preventa (descuenta inventario y registra el ingreso)</span>
-      </label>
-      <div class="form-group" id="preventaPaySelGroup" style="display:none; margin-top:0.5rem;">
-        <label>¿De qué preventa es el pago?</label>
-        <select id="editPreventaPaySel" onchange="onPreventaPaySelChange()"></select>
-        <div class="form-hint" id="preventaPayHint"></div>
-      </div>
-      <div class="form-group" id="preventaPayAmtGroup" style="display:none; margin-top:0.5rem;">
-        <label>¿Cuánto pagó ahora?</label>
-        <select id="editPreventaPayAmt" onchange="onPreventaPayAmtChange()">
-          <option value="">Selecciona la preventa primero...</option>
-        </select>
-      </div>
-    </div>
     <div class="form-group" id="lotGroup">
       <label>Lote</label>
       <select id="editLot" onchange="onLotChange()"></select>
@@ -442,21 +425,6 @@ body.public .admin-only { display: none !important; }
       <button class="btn btn-danger" id="deletePrevBtn" style="display:none;" onclick="deletePrevFromModal()">Eliminar</button>
       <button class="btn btn-secondary" onclick="closePrevModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="savePreventa()">Guardar</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="cobrarPrevOverlay">
-  <div class="modal" style="max-width:420px;">
-    <h2>Cobrar preventa</h2>
-    <p class="form-hint" id="cobrarPrevInfo"></p>
-    <div style="margin:1rem 0; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden;">
-      <button style="width:100%; display:block; padding:0.85rem 1rem; background:#1b1b38; color:#c7e; text-align:left; border-bottom:1px solid #2a2a4a;" onclick="confirmCobrarPrev(0.5)"><b>Primera parte (50%)</b><br><span style="color:#95d5b2;" id="cobrarPrevHalf">$0,00</span></button>
-      <button style="width:100%; display:block; padding:0.85rem 1rem; background:#1b1b38; color:#c7e; text-align:left;" onclick="confirmCobrarPrev(1)"><b>Pago completo (100%)</b><br><span style="color:#95d5b2;" id="cobrarPrevFull">$0,00</span></button>
-    </div>
-    <div class="form-hint">Al cobrar se registra el ingreso, el dinero entra a tu caja y los productos del pedido salen del inventario.</div>
-    <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeCobrarPrevModal()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -595,7 +563,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-05-preventas-v14';
+const BUILD_VERSION = '2026-09-06-preventas-v15';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -770,6 +738,7 @@ function normalizePreventas(arr) {
       p1: p1,
       p2: p2,
       pay: pay,
+      depleted: !!p.depleted,
       status: p.status === 'delivered' ? 'delivered' : 'pending',
       notes: (p.notes || '').trim(),
       date: p.date || '',
@@ -780,6 +749,7 @@ function normalizePreventas(arr) {
 
 function savePreventas() {
   localStorage.setItem(STORE_PREV, JSON.stringify(preventas));
+  scheduleCloud();
 }
 
 function getNextPrevId() {
@@ -1285,27 +1255,15 @@ function fillCategories() {
 function toggleCostField() {
   const isIncome = document.getElementById('editType').value === 'ingreso';
   const pedido = isIncome && document.getElementById('pedidoMode').checked;
-  const prevPay = isIncome && document.getElementById('preventaPayMode').checked;
-  const multi = isIncome && !pedido && !prevPay && document.getElementById('multiSaleMode').checked;
-  document.getElementById('pedidoGroup').style.display = (isIncome && !prevPay) ? 'block' : 'none';
-  document.getElementById('preventaPayGroup').style.display = isIncome ? 'block' : 'none';
-  document.getElementById('lotGroup').style.display = (isIncome && !multi && !pedido && !prevPay) ? 'block' : 'none';
-  document.getElementById('itemGroup').style.display = (isIncome && !multi && !pedido && !prevPay) ? 'block' : 'none';
-  document.getElementById('discountGroup').style.display = (isIncome && !multi && !pedido && !prevPay) ? 'block' : 'none';
+  const multi = isIncome && !pedido && document.getElementById('multiSaleMode').checked;
+  document.getElementById('pedidoGroup').style.display = isIncome ? 'block' : 'none';
+  document.getElementById('lotGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
+  document.getElementById('itemGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
+  document.getElementById('discountGroup').style.display = (isIncome && !multi && !pedido) ? 'block' : 'none';
   document.getElementById('gastoLinkGroup').style.display = isIncome ? 'none' : 'block';
-  document.getElementById('multiModeGroup').style.display = (isIncome && !pedido && !prevPay) ? 'block' : 'none';
+  document.getElementById('multiModeGroup').style.display = (isIncome && !pedido) ? 'block' : 'none';
   document.getElementById('multiSaleGroup').style.display = multi ? 'block' : 'none';
-  if (prevPay) {
-    document.getElementById('qtyGroup').style.display = 'none';
-    document.getElementById('itemCostHint').textContent = '';
-    document.getElementById('suggestGroup').style.display = 'none';
-    document.getElementById('gainHint').textContent = '';
-    document.getElementById('preventaPaySelGroup').style.display = prevPay ? 'block' : 'none';
-    document.getElementById('preventaPayAmtGroup').style.display = prevPay ? 'block' : 'none';
-    fillPreventaPaySel();
-    onPreventaPaySelChange();
-    document.getElementById('editCategory').placeholder = 'Se pondrá "Preventa" solo';
-  } else if (multi) {
+  if (multi) {
     document.getElementById('qtyGroup').style.display = 'none';
     document.getElementById('itemCostHint').textContent = '';
     document.getElementById('suggestGroup').style.display = 'none';
@@ -1328,33 +1286,32 @@ function toggleCostField() {
     document.getElementById('suggestGroup').style.display = 'none';
     document.getElementById('gainHint').textContent = '';
   }
-  if (isIncome && !prevPay) updateGainHint();
+  if (isIncome) updateGainHint();
 }
 
-function onPreventaPayToggle() {
-  if (document.getElementById('preventaPayMode').checked) {
-    document.getElementById('pedidoMode').checked = false;
-    document.getElementById('multiSaleMode').checked = false;
-    multiSaleLines = [];
-  }
-  toggleCostField();
+function collectedFinancial(id) {
+  return transactions.filter(t => t.preventaId === Number(id)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+}
+
+function prevFaltaCobrar(p) {
+  return Math.max(0, Math.round(((Number(p.total) || 0) - collectedFinancial(p.id)) * 100) / 100);
 }
 
 function getPayablePreventas() {
-  const pagadas = new Set(transactions.filter(t => t.preventaId).map(t => t.preventaId));
   return preventas.filter(p => {
     if (!p || !Array.isArray(p.lines)) return false;
-    if (pagadas.has(p.id)) return false;
-    if (prevPendiente(p) <= 0) return false;
+    if (prevFaltaCobrar(p) <= 0) return false;
     return true;
   });
 }
 
-function registerPreventaPayment(p, frac, date) {
+function registerPreventaPayment(p, amount, date) {
   if (!p || !Array.isArray(p.lines)) return { error: 'La preventa no existe' };
-  if (transactions.some(t => t.preventaId === p.id)) return { error: 'Esa preventa ya tiene su pago registrado (el inventario ya salió)' };
-  const collected = Math.round((Number(p.total) || 0) * frac * 100) / 100;
+  const collected = Math.round((Number(amount) || 0) * 100) / 100;
   if (collected <= 0) return { error: 'El monto del pago debe ser mayor a 0' };
+  const total = Number(p.total) || 0;
+  const falta = prevFaltaCobrar(p);
+  if (collected > falta + 0.001) return { error: 'Se intenta cobrar más de lo que falta (' + formatMoney(falta) + ')' };
   const evts = [];
   let unitsOut = 0;
   if (!p.lines.length) {
@@ -1366,114 +1323,51 @@ function registerPreventaPayment(p, frac, date) {
       if (!item) return { error: 'Un producto de la preventa ya no existe en su lote' };
       const qty = parseInt(l.qty) || 1;
       if (qty <= 0) return { error: 'La preventa tiene unidades inválidas' };
-      if (qty > (Number(item.units) || 0)) return { error: 'No hay suficientes unidades de "' + item.name + '" en inventario' };
+      if (!p.depleted && qty > (Number(item.units) || 0)) return { error: 'No hay suficientes unidades de "' + item.name + '" en inventario' };
       const lineTotal = (Number(l.price) || 0) * qty;
       const share = rowsTotal > 0 ? (lineTotal / rowsTotal) : (1 / p.lines.length);
       const lineAmount = Math.round(collected * share * 100) / 100;
       evts.push({ type: 'ingreso', amount: lineAmount, cost: (Number(item.cost) || 0) * qty, discount: 0, lotId: l.lotId, itemId: l.itemId, qty, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id });
-      unitsOut += qty;
+      if (!p.depleted) unitsOut += qty;
     }
   }
   if (!evts.length) return { error: 'La preventa no tiene productos válidos' };
-  let total = 0;
-  evts.forEach(e => { e.id = getNextId(transactions); transactions.push(e); adjustStock(e, -1); total += Number(e.amount) || 0; });
-  p.p1 = frac >= 1 ? Number(p.total) : Math.round((Number(p.total) || 0) * 50) / 100;
-  p.p2 = prevPendiente(p);
-  p.pay = frac >= 1 ? 'full' : 'seal';
+  let money = 0;
+  evts.forEach(e => {
+    e.id = getNextId(transactions);
+    transactions.push(e);
+    if (!p.depleted) adjustStock(e, -1);
+    money += Number(e.amount) || 0;
+  });
+  p.depleted = true;
+  p.p1 = Math.min(total, collectedFinancial(p.id));
+  p.p2 = Math.max(0, Math.round((total - p.p1) * 100) / 100);
+  p.pay = p.p2 <= 0 ? 'full' : (p.p1 > 0 ? 'seal' : 'none');
   savePreventas();
   saveTx();
   render();
-  return { total, unitsOut };
+  return { total: money, unitsOut };
 }
-
-var __pendingCobrarId = null;
 
 function cobrarPreventa(id) {
   const p = preventas.find(x => x.id === Number(id));
   if (!p) { showToast('Esa preventa ya no existe', true); return; }
-  if (transactions.some(t => t.preventaId === p.id)) { showToast('Esa preventa ya tiene su pago registrado (el inventario ya salió)', true); return; }
-  __pendingCobrarId = p.id;
-  document.getElementById('cobrarPrevInfo').textContent = (p.client || 'Sin cliente') + ' · Total del pedido ' + formatMoney(p.total) + ' · Falta cobrar ' + formatMoney(prevPendiente(p));
-  document.getElementById('cobrarPrevHalf').textContent = formatMoney(Math.round((Number(p.total) || 0) * 50) / 100);
-  document.getElementById('cobrarPrevFull').textContent = formatMoney(p.total);
-  document.getElementById('cobrarPrevOverlay').classList.add('active');
-  lockBody(true);
-}
-
-function closeCobrarPrevModal() {
-  __pendingCobrarId = null;
-  document.getElementById('cobrarPrevOverlay').classList.remove('active');
-  lockBody(false);
-}
-
-function confirmCobrarPrev(frac) {
-  if (__pendingCobrarId == null) return;
-  const p = preventas.find(x => x.id === Number(__pendingCobrarId));
-  if (!p) { closeCobrarPrevModal(); showToast('Esa preventa ya no existe', true); return; }
+  const falta = prevFaltaCobrar(p);
+  if (falta <= 0) { showToast('Esta preventa ya está pagada', true); return; }
+  if (!confirm('Cobrar ' + formatMoney(falta) + ' a ' + (p.client || 'sin cliente') + '?\n\nSe registra el ingreso en tu caja y, si no salieron antes, los productos del pedido salen del inventario.')) return;
   try {
-    const res = registerPreventaPayment(p, frac, todayStr());
+    const res = registerPreventaPayment(p, falta, todayStr());
     if (res && res.error) { showToast(res.error, true); return; }
-    closeCobrarPrevModal();
-    showToast('Cobro a ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + (res.unitsOut ? ' · ' + res.unitsOut + ' producto(s) salieron del inventario' : '') + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
+    showToast('Cobrado ' + formatMoney(res.total) + ' a ' + (p.client || '') + (res.unitsOut ? ' · ' + res.unitsOut + ' producto(s) salieron del inventario' : '') + (p.p2 > 0 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
   } catch (err) {
     if (typeof console !== 'undefined' && console.error) console.error('cobrarPreventa:', err);
     showToast('Error al cobrar: ' + ((err && err.message) || err), true);
   }
 }
 
-function fillPreventaPaySel() {
-  const sel = document.getElementById('editPreventaPaySel');
-  const payable = getPayablePreventas();
-  let opts = '<option value="">— Elige la preventa —</option>';
-  payable.forEach(p => {
-    const undTxt = (p.lines && p.lines.length) ? ' (' + p.lines.reduce((s, l) => s + (Number(l.qty) || 1), 0) + ' und)' : '';
-    opts += '<option value="' + p.id + '">' + escapeHtml(p.client || 'Sin cliente') + ' · ' + formatMoney(p.total) + undTxt + '</option>';
-  });
-  sel.innerHTML = opts;
-  sel.value = '';
-}
-
-function onPreventaPaySelChange() {
-  const sel = document.getElementById('editPreventaPaySel');
-  const amt = document.getElementById('editPreventaPayAmt');
-  const hint = document.getElementById('preventaPayHint');
-  const p = preventas.find(x => x.id === Number(sel.value));
-  if (!p) {
-    amt.innerHTML = '<option value="">Selecciona la preventa primero...</option>';
-    hint.textContent = getPayablePreventas().length ? '' : 'No hay preventas con saldo pendiente para cobrar.';
-    document.getElementById('preventaPayAmtGroup').style.display = 'block';
-    return;
-  }
-  const pend = prevPendiente(p);
-  const half = Math.round((Number(p.total) || 0) * 50) / 100;
-  const full = Number(p.total) || 0;
-  amt.innerHTML = '<option value="">¿Cuánto pagó?</option>' +
-    '<option value="50"' + (half <= 0 && pend <= 0 ? ' disabled' : '') + '>Primera parte (50%) · ' + formatMoney(half) + '</option>' +
-    '<option value="100"' + (full <= 0 ? ' disabled' : '') + '>Pago completo (100%) · ' + formatMoney(full) + '</option>';
-  amt.value = '';
-  hint.textContent = p.client + ' · Total del pedido ' + formatMoney(p.total) + ' · Todavía queda por cobrar ' + formatMoney(pend);
-  onPreventaPayAmtChange();
-}
-
-function onPreventaPayAmtChange() {
-  const sel = document.getElementById('editPreventaPaySel');
-  const amt = document.getElementById('editPreventaPayAmt').value;
-  const p = preventas.find(x => x.id === Number(sel.value));
-  if (!p) return;
-  const frac = amt === '100' ? 1 : amt === '50' ? 0.5 : 0;
-  if (frac) {
-    document.getElementById('editAmount').value = formatEditValue(Math.round((Number(p.total) || 0) * frac * 100) / 100);
-    document.getElementById('editCategory').value = 'Preventa';
-    document.getElementById('editDesc').value = p.client ? ('Preventa de ' + p.client) : 'Preventa';
-  } else {
-    document.getElementById('editAmount').value = '';
-  }
-}
-
 function onPedidoToggle() {
   if (document.getElementById('pedidoMode').checked) {
     document.getElementById('multiSaleMode').checked = false;
-    document.getElementById('preventaPayMode').checked = false;
     multiSaleLines = [];
   }
   toggleCostField();
@@ -1483,7 +1377,6 @@ function onMultiSaleToggle() {
   if (!document.getElementById('multiSaleMode').checked) multiSaleLines = [];
   if (document.getElementById('multiSaleMode').checked) {
     document.getElementById('pedidoMode').checked = false;
-    document.getElementById('preventaPayMode').checked = false;
   }
   toggleCostField();
 }
@@ -1768,7 +1661,6 @@ function openModal(id = null) {
   document.getElementById('editGastoProdQty').value = '1';
   pendingLotFirstItem = null;
   document.getElementById('multiSaleMode').checked = false;
-  document.getElementById('preventaPayMode').checked = false;
   multiSaleLines = [];
   toggleCostField();
   onGastoLinkChange();
@@ -1803,26 +1695,6 @@ function saveTransaction() {
   const desc = document.getElementById('editDesc').value.trim();
   const date = document.getElementById('editDate').value || todayStr();
   const id = document.getElementById('editId').value;
-
-  if (type === 'ingreso' && document.getElementById('preventaPayMode').checked) {
-    try {
-      const psel = document.getElementById('editPreventaPaySel').value;
-      if (!psel) { showToast('Elige la preventa del pago', true); return; }
-      const p = preventas.find(x => x.id === Number(psel));
-      if (!p) { showToast('Esa preventa ya no existe', true); return; }
-      const fracSel = document.getElementById('editPreventaPayAmt').value;
-      const frac = fracSel === '100' ? 1 : fracSel === '50' ? 0.5 : 0;
-      if (!frac) { showToast('Indica si pagó la primera parte (50%) o el pago completo (100%)', true); return; }
-      const res = registerPreventaPayment(p, frac, date);
-      if (res.error) { showToast(res.error, true); return; }
-      closeModal();
-      showToast('Pago de preventa de ' + (p.client || '') + ' registrado · ' + formatMoney(res.total) + (res.unitsOut ? ' · ' + res.unitsOut + ' producto(s) salieron del inventario' : '') + (frac < 1 ? ' · Falta cobrar ' + formatMoney(p.p2) : ''));
-    } catch (err) {
-      if (typeof console !== 'undefined' && console.error) console.error('preventaPay:', err);
-      showToast('Error al registrar el pago de la preventa: ' + ((err && err.message) || err), true);
-    }
-    return;
-  }
 
   if (type === 'ingreso' && !pedido && document.getElementById('multiSaleMode').checked) {
     syncMultiSaleFromDom();
@@ -2314,7 +2186,6 @@ function renderPreventas() {
     return;
   }
   const sorted = [...preventas].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-  const pagadas = new Set(transactions.filter(t => t.preventaId).map(t => t.preventaId));
   wrap.innerHTML = `
     <table>
       <thead>
@@ -2324,7 +2195,8 @@ function renderPreventas() {
         ${sorted.map(p => {
           const p1 = Number(p.p1) || 0;
           const pend = prevPendiente(p);
-          const paid = pend <= 0;
+          const falta = prevFaltaCobrar(p);
+          const paid = falta <= 0;
           const dParts = (p.date || '').split('-');
           const dLabel = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : '—';
           return `<tr>
@@ -2338,7 +2210,7 @@ function renderPreventas() {
             <td>${p.status === 'delivered' ? '<span class="badge badge-ok">Entregado</span>' : '<span class="badge badge-warn">Por entregar</span>'}</td>
             <td>${escapeHtml(p.notes) || '—'}</td>
             <td class="admin-only"><div class="td-actions">
-              ${(!pagadas.has(p.id) && pend > 0) ? '<button class="btn btn-primary btn-sm admin-only" onclick="cobrarPreventa(' + p.id + ')" title="Registra el ingreso y descuenta inventario">Cobrar</button>' : ''}
+              ${falta > 0 ? '<button class="btn btn-primary btn-sm admin-only" onclick="cobrarPreventa(' + p.id + ')" title="Registra el ingreso del saldo que falta y descuenta inventario si no salió">Cobrar</button>' : ''}
               <button class="btn btn-secondary btn-sm admin-only" onclick="openPrevModal(${p.id})">Editar</button>
               <button class="btn btn-danger btn-sm admin-only" onclick="deletePreventa(${p.id})">Eliminar</button>
             </div></td>
@@ -2608,6 +2480,17 @@ function savePreventa() {
       preventas.push(data);
     }
     savePreventas();
+    if (!id && p1 > 0) {
+      const np = preventas.find(x => x.id === Number(data.id));
+      const res = registerPreventaPayment(np, p1, data.date);
+      if (res && res.error) {
+        preventas = preventas.filter(x => x.id !== Number(data.id));
+        savePreventas();
+        render();
+        showToast(res.error, true);
+        return;
+      }
+    }
     render();
     closePrevModal();
     showToast('Preventa guardada · Pagado ' + (pay === 'full' ? 'completo' : pay === 'seal' ? '50%' : 'nada'));
@@ -3057,6 +2940,7 @@ function uploadCloud(force) {
     lots,
     catalog,
     openBalance,
+    preventas,
     updatedAt: new Date().toISOString()
   };
   cloudDoc.set(payload)
@@ -3083,10 +2967,12 @@ function downloadCloud() {
       if (Array.isArray(d.lots)) lots = normalizeLots(d.lots);
       if (d.catalog) catalog = normalizeCatalog(d.catalog);
       if (typeof d.openBalance === 'number') openBalance = d.openBalance;
+      if (Array.isArray(d.preventas)) { preventas = normalizePreventas(d.preventas); savePreventas(); }
       saveTx();
       saveLots();
       saveCatalog();
       render();
+      renderPreventas();
       showToast('Datos descargados de la nube');
     })
     .catch(e => {
@@ -3105,10 +2991,12 @@ function watchCloud() {
     if (Array.isArray(d.lots)) lots = normalizeLots(d.lots);
     if (d.catalog) catalog = normalizeCatalog(d.catalog);
     if (typeof d.openBalance === 'number') openBalance = d.openBalance;
+    if (Array.isArray(d.preventas)) { preventas = normalizePreventas(d.preventas); savePreventas(); }
     saveTx();
     saveLots();
     saveCatalog();
     render();
+    renderPreventas();
   }, function(err) {
     if (err && err.code === 'permission-denied') showToast('No tienes permiso para leer los datos', true);
   });
@@ -3155,11 +3043,8 @@ document.getElementById('cloudOverlay').addEventListener('click', function(e) {
 document.getElementById('prevModalOverlay').addEventListener('click', function(e) {
   if (e.target === this) closePrevModal();
 });
-document.getElementById('cobrarPrevOverlay').addEventListener('click', function(e) {
-  if (e.target === this) closeCobrarPrevModal();
-});
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); closePrevModal(); closeCobrarPrevModal(); }
+  if (e.key === 'Escape') { closeModal(); closeLotModal(); closeCatModal(); closeLotCatModal(); closeReport(); closeCloudModal(); closePrevModal(); }
 });
 window.addEventListener('storage', function(e) {
   if (e.key === STORE_TX || e.key === STORE_LOTS || e.key === STORE_CAT) { loadTx(); loadLots(); loadCatalog(); render(); }
