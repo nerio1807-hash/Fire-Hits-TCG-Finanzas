@@ -658,7 +658,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-ganancia-v29';
+const BUILD_VERSION = '2026-09-07-ganancia2-v30';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -968,7 +968,8 @@ function renderStats() {
   const invValue0 = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) + (Number(l.shipCost) || 0), 0);
   const totalCost = invValue0;
   const costoSold = filtered.filter(t => t.type === 'ingreso').reduce((s,t) => s + (Number(t.cost) || 0), 0);
-  const gain = totalIn - costoSold - totalOut;
+  const gastosNoProd = filtered.filter(t => t.type === 'gasto' && !t.lienName).reduce((s,t) => s + Number(t.amount), 0);
+  const gain = totalIn - costoSold - gastosNoProd;
   const now = new Date();
   const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const monthKey = fMonth || ym;
@@ -1008,7 +1009,7 @@ function renderStats() {
   document.getElementById('stats').innerHTML = `
     <div class="stat-card clickable-stat" onclick="setHistoryFilter('ingreso')" title="Ver todos los ingresos"><h3>Ingresos totales</h3><p class="c-green">${formatMoney(totalIn)}</p><div class="sub">Clic para ver los ingresos</div></div>
     <div class="stat-card"><h3>Costos de productos</h3><p class="c-red">${formatMoney(totalCost)}</p><div class="sub">Costo del inventario actual</div></div>
-    <div class="stat-card"><h3>Ganancia neta</h3><p class="${gain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gain)}</p><div class="sub">Ingresos − Costo de lo vendido − Gastos</div></div>
+    <div class="stat-card"><h3>Ganancia neta</h3><p class="${gain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gain)}</p><div class="sub">Ingresos − Costo de lo vendido − Gastos (no productos)</div></div>
     <div class="stat-card clickable-stat" onclick="setHistoryFilter('gasto')" title="Ver todos los gastos"><h3>Gastos totales</h3><p class="c-red">${formatMoney(totalOut)}</p><div class="sub">Clic para ver los gastos</div></div>
     <div class="stat-card"><h3>${fMonth ? 'Mes filtrado' : 'Este mes'}</h3><p class="c-white">${formatMoney(monthIn - monthOut)}</p></div>
     <div class="stat-card"><h3>Movimientos</h3><p class="c-white">${filtered.length}</p><div class="sub">${active ? 'De ' + transactions.length + ' en total' : 'Registrados en tu caja'}</div></div>
