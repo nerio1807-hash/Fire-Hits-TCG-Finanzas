@@ -682,7 +682,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-profit2-v20';
+const BUILD_VERSION = '2026-09-07-ganancia-v21';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1060,7 +1060,7 @@ function renderHistory() {
   wrap.innerHTML = `
     <table>
       <thead>
-        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
+        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Ganancia</th><th>Monto</th><th></th></tr>
       </thead>
       <tbody>
         ${movementRowsHTML(sorted)}
@@ -1077,6 +1077,10 @@ function movementRowsHTML(sorted) {
     const prod = item ? item.name : '';
     const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
     const prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
+    const isProdSale = t.type === 'ingreso' && (Number(t.cost) || 0) > 0;
+    const profit = isProdSale ? (Number(t.amount) - (Number(t.cost) || 0)) : null;
+    const profitCell = profit == null ? '<td data-label="Ganancia">—</td>'
+      : `<td data-label="Ganancia" class="${profit >= 0 ? 'amount-in' : 'amount-out'}">${profit >= 0 ? '+' : '-'} ${formatMoney(Math.abs(profit))}</td>`;
     return `<tr>
       <td data-label="Fecha">${dLabel}</td>
       <td data-label="Tipo"><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>${t.hist ? ' <span class="badge badge-hist">Histórico</span>' : ''}</td>
@@ -1084,6 +1088,7 @@ function movementRowsHTML(sorted) {
       <td data-label="Categoría">${escapeHtml(t.category || '-')}</td>
       <td data-label="Descripción">${escapeHtml(t.desc || '-')}</td>
       <td data-label="Costo" class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
+      ${profitCell}
       <td data-label="Monto" class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
       <td data-label="Acciones" class="admin-only"><div class="td-actions">
         <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
@@ -1099,7 +1104,8 @@ function movementSummaryHTML(filtered) {
     else acc.out += Number(t.amount);
     return acc;
   }, {in:0, out:0});
-  return `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b></p>`;
+  const gana = filtered.filter(t => t.type === 'ingreso' && (Number(t.cost) || 0) > 0).reduce((s,t) => s + (Number(t.amount) - (Number(t.cost) || 0)), 0);
+  return `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b> · Ganancia en ventas (monto − costo del producto): <span class="${gana >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gana)}</span></p>`;
 }
 
 function renderCharts() {
@@ -1372,7 +1378,7 @@ function renderMovements() {
   wrap.innerHTML = `
     <table>
       <thead>
-        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
+        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Ganancia</th><th>Monto</th><th></th></tr>
       </thead>
       <tbody>
         ${movementRowsHTML(sorted)}
