@@ -215,25 +215,6 @@ body.public .admin-only { display: none !important; }
   }
   #historyTable td[data-label="Acciones"]::before, #movTable td[data-label="Acciones"]::before { display: none; }
   #doughnutChart, #barChart { height: 170px; }
-  #profitTable table { min-width: 0; }
-  #profitTable thead { display: none; }
-  #profitTable tbody { display: block; }
-  #profitTable tr {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.9rem;
-    background: #141425; border: 1px solid #2a2a4a; border-radius: 10px;
-    padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
-  }
-  #profitTable tr:hover td { background: transparent; }
-  #profitTable td {
-    border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent;
-    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left;
-  }
-  #profitTable td::before {
-    content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase;
-    letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto;
-  }
-  #profitTable td[data-label="Acumulado"] { grid-column: 1 / -1; }
-  #profitTable td[data-label="Costo de lo vendido"], #profitTable td[data-label="Reinversión en lotes"] { grid-column: 1 / -1; }
   #lotItems .lot-item-row { flex-direction: column; align-items: stretch; }
   #lotItems .lot-item-row .btn { align-self: flex-end; }
   #multiSaleItems .multi-line-row > div, .prev-prod-row > div { flex-wrap: wrap; }
@@ -304,11 +285,6 @@ body.public .admin-only { display: none !important; }
       <div class="panel">
         <h2>Ingresos vs Gastos (6 meses)</h2>
         <canvas id="barChart"></canvas>
-      </div>
-      <div class="panel full">
-        <h2>📈 Ganancia mes a mes</h2>
-        <div class="form-hint" style="margin-bottom:0.75rem;">Ganancia real del mes = Ventas − Costo de lo vendido − Gastos del mes. Las compras de lotes no cuentan como gasto: se muestran como "Reinversión en lotes" y su costo se recupera cuando vendes.</div>
-        <div class="tablewrap" id="profitTable"></div>
       </div>
     </div>
   </div>
@@ -682,7 +658,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-ganancia-v21';
+const BUILD_VERSION = '2026-09-07-sinmes-v22';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1060,7 +1036,7 @@ function renderHistory() {
   wrap.innerHTML = `
     <table>
       <thead>
-        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Ganancia</th><th>Monto</th><th></th></tr>
+        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
       </thead>
       <tbody>
         ${movementRowsHTML(sorted)}
@@ -1077,10 +1053,6 @@ function movementRowsHTML(sorted) {
     const prod = item ? item.name : '';
     const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
     const prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
-    const isProdSale = t.type === 'ingreso' && (Number(t.cost) || 0) > 0;
-    const profit = isProdSale ? (Number(t.amount) - (Number(t.cost) || 0)) : null;
-    const profitCell = profit == null ? '<td data-label="Ganancia">—</td>'
-      : `<td data-label="Ganancia" class="${profit >= 0 ? 'amount-in' : 'amount-out'}">${profit >= 0 ? '+' : '-'} ${formatMoney(Math.abs(profit))}</td>`;
     return `<tr>
       <td data-label="Fecha">${dLabel}</td>
       <td data-label="Tipo"><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>${t.hist ? ' <span class="badge badge-hist">Histórico</span>' : ''}</td>
@@ -1088,7 +1060,6 @@ function movementRowsHTML(sorted) {
       <td data-label="Categoría">${escapeHtml(t.category || '-')}</td>
       <td data-label="Descripción">${escapeHtml(t.desc || '-')}</td>
       <td data-label="Costo" class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
-      ${profitCell}
       <td data-label="Monto" class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
       <td data-label="Acciones" class="admin-only"><div class="td-actions">
         <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
@@ -1104,8 +1075,7 @@ function movementSummaryHTML(filtered) {
     else acc.out += Number(t.amount);
     return acc;
   }, {in:0, out:0});
-  const gana = filtered.filter(t => t.type === 'ingreso' && (Number(t.cost) || 0) > 0).reduce((s,t) => s + (Number(t.amount) - (Number(t.cost) || 0)), 0);
-  return `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b> · Ganancia en ventas (monto − costo del producto): <span class="${gana >= 0 ? 'c-green' : 'c-red'}">${formatMoney(gana)}</span></p>`;
+  return `<p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Visibles: <span class="c-green">+${formatMoney(totalRow.in)}</span> · <span class="c-red">-${formatMoney(totalRow.out)}</span> · <b style="color:#fff;">${formatMoney(totalRow.in-totalRow.out)}</b></p>`;
 }
 
 function renderCharts() {
@@ -1127,50 +1097,6 @@ function renderCharts() {
     months.push({ label: MESES[d.getMonth()].slice(0,3), income: inc, expense: exp });
   }
   drawBarChart(months);
-}
-
-function renderMonthlyProfit() {
-  const wrap = document.getElementById('profitTable');
-  if (!wrap) return;
-  const now = new Date();
-  const rows = [];
-  let acum = 0, acumInv = 0;
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    const met = t => (t.date || '').startsWith(ym);
-    const ventas = transactions.filter(t => t.type === 'ingreso' && met(t)).reduce((s, t) => s + Number(t.amount), 0);
-    const gastos = transactions.filter(t => t.type === 'gasto' && met(t) && !t.lotId).reduce((s, t) => s + Number(t.amount), 0);
-    const inversion = transactions.filter(t => t.type === 'gasto' && met(t) && t.lotId).reduce((s, t) => s + Number(t.amount), 0);
-    const ganancia = ventas - gastos - inversion;
-    acum += ganancia;
-    acumInv += inversion;
-    rows.push({ label: MESES[d.getMonth()].slice(0, 3) + ' ' + String(d.getFullYear()).slice(2), current: d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(), ventas, gastos, inversion, ganancia, acum });
-  }
-  if (!transactions.length) {
-    wrap.innerHTML = '<div class="empty-state" style="padding:1rem;"><h3>Sin datos</h3><p>Los movimientos de cada mes aparecerán aquí.</p></div>';
-    return;
-  }
-  const gCls = v => v >= 0 ? 'c-green' : 'c-red';
-  const gTxt = v => (v >= 0 ? '+' : '-') + ' ' + formatMoney(Math.abs(v));
-  wrap.innerHTML = `
-    <table class="profit-table">
-      <thead>
-        <tr><th>Mes</th><th>Ventas</th><th>Gastos del mes</th><th>Reinversión en lotes</th><th>Ganancia real</th><th>Acumulado</th></tr>
-      </thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr${r.current ? ' style="background:#1c1c30;"' : ''}>
-            <td data-label="Mes">${r.label}${r.current ? ' <span class="badge badge-ok">actual</span>' : ''}</td>
-            <td data-label="Ventas" class="c-green">${formatMoney(r.ventas)}</td>
-            <td data-label="Gastos del mes" class="c-red">${formatMoney(r.gastos)}</td>
-            <td data-label="Reinversión en lotes" class="c-white">${formatMoney(r.inversion)}</td>
-            <td data-label="Ganancia real" class="${gCls(r.ganancia)}">${gTxt(r.ganancia)}</td>
-            <td data-label="Acumulado" class="c-white">${formatMoney(r.acum)}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
-    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Fórmula: Ingresos − Gastos del mes − Reinversión en lotes. Ganancia real acumulada (6 meses): <b class="${gCls(acum)}">${gTxt(acum)}</b> · Reinvertido en lotes: <b class="c-white">${formatMoney(acumInv)}</b></p>`;
 }
 
 function drawDoughnut(entries) {
@@ -1343,7 +1269,6 @@ function render() {
   renderStats();
   renderHistory();
   renderCharts();
-  renderMonthlyProfit();
   renderLots();
   renderCatalog();
   fillCatNamesDatalist();
@@ -1378,7 +1303,7 @@ function renderMovements() {
   wrap.innerHTML = `
     <table>
       <thead>
-        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Ganancia</th><th>Monto</th><th></th></tr>
+        <tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Categoría</th><th>Descripción</th><th>Costo</th><th>Monto</th><th></th></tr>
       </thead>
       <tbody>
         ${movementRowsHTML(sorted)}
