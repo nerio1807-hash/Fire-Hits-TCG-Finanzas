@@ -673,7 +673,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-recovery2-v32';
+const BUILD_VERSION = '2026-09-07-recovery3-v33';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1039,12 +1039,18 @@ function renderRecovery() {
     return;
   }
   const rows = lots.map(l => {
-    const cost = (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) + (Number(l.shipCost) || 0);
+    const items = l.items || [];
     const sold = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id)).reduce((s,t) => s + Number(t.amount), 0);
+    const shipCost = Number(l.shipCost) || 0;
+    const initialInvest = items.reduce((a,i) => {
+      const soldQty = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id) && Number(t.itemId) === Number(i.id)).reduce((s,t) => s + (Number(t.qty) || 0), 0);
+      return a + (Number(i.cost) || 0) * ((Number(i.units) || 0) + soldQty);
+    }, 0) + shipCost;
+    const cost = initialInvest;
     const falta = cost - sold;
     const pct = cost > 0 ? Math.min(100, (sold / cost) * 100) : (sold > 0 ? 100 : 0);
     const recovered = falta <= 0;
-    const remainingVal = (l.items || []).reduce((a,i) => {
+    const remainingVal = items.reduce((a,i) => {
       const un = Number(i.units) || 0;
       if (!un) return a;
       const p = catalog.products.find(x => (x.name || '').toLowerCase() === (i.name || '').toLowerCase());
@@ -1060,13 +1066,13 @@ function renderRecovery() {
   wrap.innerHTML = `
     <table>
       <thead>
-        <tr><th>Lote</th><th>Costo total</th><th>Vendido</th><th>Te falta</th><th>Ganancia est.</th><th>Avance</th></tr>
+        <tr><th>Lote</th><th>Inversión inicial</th><th>Vendido</th><th>Te falta</th><th>Ganancia est.</th><th>Avance</th></tr>
       </thead>
       <tbody>
         ${rows.map(r => `
           <tr>
             <td data-label="Lote">${escapeHtml(r.name)}</td>
-            <td data-label="Costo total">${formatMoney(r.cost)}</td>
+            <td data-label="Inversión inicial">${formatMoney(r.cost)}</td>
             <td data-label="Vendido" class="c-green">${formatMoney(r.sold)}</td>
             <td data-label="Te falta" class="${r.recovered ? 'c-green' : 'c-red'}">${r.recovered ? '✓ Recuperado' : formatMoney(Math.abs(r.falta))}</td>
             <td data-label="Ganancia est." class="${r.projGain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(r.projGain)}</td>
@@ -1077,7 +1083,7 @@ function renderRecovery() {
           </tr>`).join('')}
       </tbody>
     </table>
-    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Ganancia est. = Vendido + (unidades restantes × precio de venta del catálogo) − costo total del lote. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Inversión inicial = costo de <b>todas</b> las unidades del lote (las vendidas + las que quedan) + envío. Te falta = inversión inicial − vendido. Ganancia est. = vendido + (unidades restantes × precio del catálogo) − inversión inicial. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
 }
 
 function clearFilters() {
