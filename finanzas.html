@@ -658,7 +658,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-sinmes-v22';
+const BUILD_VERSION = '2026-09-07-lotcost-v24';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -2283,7 +2283,12 @@ function saveLot() {
   saveLots();
   if (pendingGastoLotTxId) {
     const tx = transactions.find(t => t.id === pendingGastoLotTxId);
-    if (tx) { tx.lotId = targetId; saveTx(); }
+    if (tx) {
+      const totalCost = items.reduce((s,i) => s + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) + (Number(shipCost) || 0);
+      tx.lotId = targetId;
+      tx.amount = Math.round(totalCost * 100) / 100;
+      saveTx();
+    }
     pendingGastoLotTxId = null;
   }
   syncCatalogFromLots();
