@@ -682,7 +682,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-profit-v19';
+const BUILD_VERSION = '2026-09-07-profit2-v20';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1134,13 +1134,12 @@ function renderMonthlyProfit() {
     const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     const met = t => (t.date || '').startsWith(ym);
     const ventas = transactions.filter(t => t.type === 'ingreso' && met(t)).reduce((s, t) => s + Number(t.amount), 0);
-    const costoSold = transactions.filter(t => t.type === 'ingreso' && met(t)).reduce((s, t) => s + (Number(t.cost) || 0), 0);
     const gastos = transactions.filter(t => t.type === 'gasto' && met(t) && !t.lotId).reduce((s, t) => s + Number(t.amount), 0);
     const inversion = transactions.filter(t => t.type === 'gasto' && met(t) && t.lotId).reduce((s, t) => s + Number(t.amount), 0);
-    const ganancia = ventas - costoSold - gastos - inversion;
+    const ganancia = ventas - gastos - inversion;
     acum += ganancia;
     acumInv += inversion;
-    rows.push({ label: MESES[d.getMonth()].slice(0, 3) + ' ' + String(d.getFullYear()).slice(2), current: d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(), ventas, costoSold, gastos, inversion, ganancia, acum });
+    rows.push({ label: MESES[d.getMonth()].slice(0, 3) + ' ' + String(d.getFullYear()).slice(2), current: d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(), ventas, gastos, inversion, ganancia, acum });
   }
   if (!transactions.length) {
     wrap.innerHTML = '<div class="empty-state" style="padding:1rem;"><h3>Sin datos</h3><p>Los movimientos de cada mes aparecerán aquí.</p></div>';
@@ -1151,14 +1150,13 @@ function renderMonthlyProfit() {
   wrap.innerHTML = `
     <table class="profit-table">
       <thead>
-        <tr><th>Mes</th><th>Ventas</th><th>Costo de lo vendido</th><th>Gastos del mes</th><th>Reinversión en lotes</th><th>Ganancia real</th><th>Acumulado</th></tr>
+        <tr><th>Mes</th><th>Ventas</th><th>Gastos del mes</th><th>Reinversión en lotes</th><th>Ganancia real</th><th>Acumulado</th></tr>
       </thead>
       <tbody>
         ${rows.map(r => `
           <tr${r.current ? ' style="background:#1c1c30;"' : ''}>
             <td data-label="Mes">${r.label}${r.current ? ' <span class="badge badge-ok">actual</span>' : ''}</td>
             <td data-label="Ventas" class="c-green">${formatMoney(r.ventas)}</td>
-            <td data-label="Costo de lo vendido" class="c-red">${formatMoney(r.costoSold)}</td>
             <td data-label="Gastos del mes" class="c-red">${formatMoney(r.gastos)}</td>
             <td data-label="Reinversión en lotes" class="c-white">${formatMoney(r.inversion)}</td>
             <td data-label="Ganancia real" class="${gCls(r.ganancia)}">${gTxt(r.ganancia)}</td>
@@ -1166,7 +1164,7 @@ function renderMonthlyProfit() {
           </tr>`).join('')}
       </tbody>
     </table>
-    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Ganancia real acumulada (6 meses): <b class="${gCls(acum)}">${gTxt(acum)}</b> · Reinvertido en lotes: <b class="c-white">${formatMoney(acumInv)}</b> · Fórmula: Ventas − Costo de lo vendido − Gastos del mes − Reinversión en lotes</p>`;
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Fórmula: Ingresos − Gastos del mes − Reinversión en lotes. Ganancia real acumulada (6 meses): <b class="${gCls(acum)}">${gTxt(acum)}</b> · Reinvertido en lotes: <b class="c-white">${formatMoney(acumInv)}</b></p>`;
 }
 
 function drawDoughnut(entries) {
