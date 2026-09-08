@@ -682,7 +682,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-fixes-v17';
+const BUILD_VERSION = '2026-09-07-cat-v18';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1986,6 +1986,7 @@ function saveTransaction() {
         }
       }
       if (!addItemToLot(lotId, lienName, lienQty, lienUnitCost)) { showToast('No se encontró el lote', true); return; }
+      syncCatalogFromLots();
     } else if (gl === 'new') {
       linkNewLot = true;
     }
