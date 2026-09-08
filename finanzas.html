@@ -78,6 +78,9 @@ tr:hover td { background: #1c1c30; }
 .amount-in { color: #95d5b2; font-weight: 700; }
 .amount-out { color: #e63946; font-weight: 700; }
 .td-actions { display: flex; gap: 0.4rem; }
+.bar-track { background: #2a2a4a; border-radius: 6px; height: 8px; min-width: 60px; overflow: hidden; display: inline-block; font-size: 0; }
+.bar-fill { background: #95d5b2; height: 100%; border-radius: 6px; }
+.bar-track .bar-fill.c-red { background: #e63946; }
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: #555; }
 .empty-state h3 { font-size: 1.2rem; margin-bottom: 0.3rem; }
 .legend { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.75rem; font-size: 0.8rem; }
@@ -214,6 +217,14 @@ body.public .admin-only { display: none !important; }
     padding-top: 0.4rem; margin-top: 0.2rem;
   }
   #historyTable td[data-label="Acciones"]::before, #movTable td[data-label="Acciones"]::before { display: none; }
+  #recoveryTable table { min-width: 0; }
+  #recoveryTable thead { display: none; }
+  #recoveryTable tbody { display: block; }
+  #recoveryTable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 1rem; background: #141425; border: 1px solid #2a2a4a; border-radius: 10px; padding: 0.6rem 0.75rem; margin-bottom: 0.6rem; }
+  #recoveryTable td { border-bottom: none; padding: 0.15rem 0; white-space: normal; background: transparent; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; text-align: left; }
+  #recoveryTable td::before { content: attr(data-label); font-size: 0.62rem; color: #888; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; flex: 0 0 auto; }
+  #recoveryTable td[data-label="Avance"] { grid-column: 1 / -1; }
+  #recoveryTable td[data-label="Ganancia est."] { grid-column: 1 / -1; border-top: 1px solid #24243f; padding-top: 0.4rem; margin-top: 0.2rem; }
   #doughnutChart, #barChart { height: 170px; }
   #lotItems .lot-item-row { flex-direction: column; align-items: stretch; }
   #lotItems .lot-item-row .btn { align-self: flex-end; }
@@ -285,6 +296,10 @@ body.public .admin-only { display: none !important; }
       <div class="panel">
         <h2>Ingresos vs Gastos (6 meses)</h2>
         <canvas id="barChart"></canvas>
+      </div>
+      <div class="panel full">
+        <h2>🔄 Cuánto te falta por lote</h2>
+        <div class="tablewrap" id="recoveryTable"></div>
       </div>
     </div>
   </div>
@@ -658,7 +673,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-ganancia2-v30';
+const BUILD_VERSION = '2026-09-07-recovery2-v32';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1016,6 +1031,55 @@ function renderStats() {
   `;
 }
 
+function renderRecovery() {
+  const wrap = document.getElementById('recoveryTable');
+  if (!wrap) return;
+  if (!lots.length) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:0.75rem;"><p>Agrega un lote en Inventario para ver cuánto te falta por recuperar.</p></div>';
+    return;
+  }
+  const rows = lots.map(l => {
+    const cost = (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) + (Number(l.shipCost) || 0);
+    const sold = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id)).reduce((s,t) => s + Number(t.amount), 0);
+    const falta = cost - sold;
+    const pct = cost > 0 ? Math.min(100, (sold / cost) * 100) : (sold > 0 ? 100 : 0);
+    const recovered = falta <= 0;
+    const remainingVal = (l.items || []).reduce((a,i) => {
+      const un = Number(i.units) || 0;
+      if (!un) return a;
+      const p = catalog.products.find(x => (x.name || '').toLowerCase() === (i.name || '').toLowerCase());
+      const unit = catSalePrice(p);
+      if (unit == null) return a;
+      return a + unit * un;
+    }, 0);
+    const projGain = sold + remainingVal - cost;
+    return { id: l.id, name: l.name || 'Lote', cost, sold, falta, pct, recovered, remainingVal, projGain };
+  });
+  rows.sort((a,b) => (a.recovered - b.recovered) || (b.cost - a.cost));
+  const totalProj = rows.reduce((s,r) => s + r.projGain, 0);
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Lote</th><th>Costo total</th><th>Vendido</th><th>Te falta</th><th>Ganancia est.</th><th>Avance</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td data-label="Lote">${escapeHtml(r.name)}</td>
+            <td data-label="Costo total">${formatMoney(r.cost)}</td>
+            <td data-label="Vendido" class="c-green">${formatMoney(r.sold)}</td>
+            <td data-label="Te falta" class="${r.recovered ? 'c-green' : 'c-red'}">${r.recovered ? '✓ Recuperado' : formatMoney(Math.abs(r.falta))}</td>
+            <td data-label="Ganancia est." class="${r.projGain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(r.projGain)}</td>
+            <td data-label="Avance">
+              <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, r.pct)}%"></div></div>
+              <span style="font-size:0.75rem;color:#888;">${r.pct.toFixed(0)}%</span>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Ganancia est. = Vendido + (unidades restantes × precio de venta del catálogo) − costo total del lote. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
+}
+
 function clearFilters() {
   document.getElementById('filterType').value = '';
   document.getElementById('filterMonth').value = '';
@@ -1271,6 +1335,7 @@ function render() {
   renderStats();
   renderHistory();
   renderCharts();
+  renderRecovery();
   renderLots();
   renderCatalog();
   fillCatNamesDatalist();
