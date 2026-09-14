@@ -673,7 +673,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-14-invfix-v36';
+const BUILD_VERSION = '2026-09-14-invfix-v38';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1040,7 +1040,7 @@ function renderRecovery() {
   }
   const rows = lots.map(l => {
     const items = l.items || [];
-    const sold = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id)).reduce((s,t) => s + Number(t.amount), 0);
+    const sold = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id)).reduce((s,t) => s + Number(t.amount), 0) + prevPendingLinesForLot(l.id);
     const shipCost = Number(l.shipCost) || 0;
     const recInsist = items.reduce((a,i) => {
       const soldQty = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id) && Number(t.itemId) === Number(i.id)).reduce((s,t) => s + (Number(t.qty) || 0), 0);
@@ -1084,7 +1084,7 @@ function renderRecovery() {
           </tr>`).join('')}
       </tbody>
     </table>
-    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Inversión inicial: usa el total que fijaste con el botón <b>Editar</b> (tu inversión real). Si no está fijado, calcula automáticamente costo × unidades (las vendidas + las que quedan) + envío. Te falta = inversión − vendido. Ganancia est. = vendido + (unidades restantes × precio del catálogo) − inversión. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Inversión inicial: usa el total que fijaste con el botón <b>Editar</b> (tu inversión real). Si no está fijado, calcula automáticamente costo × unidades (las vendidas + las que quedan) + envío. Vendido incluye los ingresos registrados y el dinero <b>por cobrar</b> de preventas que aún no han tenido ningún pago. Te falta = inversión − vendido. Ganancia est. = vendido + (unidades restantes × precio del catálogo) − inversión. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
 }
 
 function setLotInvestment(id) {
@@ -2448,6 +2448,18 @@ function deleteLotFromModal() {
 
 function prevPendiente(p) {
   return Math.max(0, (Number(p.total) || 0) - (Number(p.p1) || 0));
+}
+
+function prevPendingLinesForLot(lid) {
+  let pend = 0;
+  preventas.forEach(p => {
+    if (!Array.isArray(p.lines) || !p.lines.length) return;
+    if (transactions.some(t => t.preventaId === p.id)) return;
+    (p.lines || []).forEach(l => {
+      if (Number(l.lotId) === Number(lid)) pend += (Number(l.price) || 0) * (parseInt(l.qty, 10) || 0);
+    });
+  });
+  return Math.round(pend * 100) / 100;
 }
 
 function renderPrevStats() {
