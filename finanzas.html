@@ -673,7 +673,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-prevparcial-v34';
+const BUILD_VERSION = '2026-09-07-prevmvto-v35';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -977,7 +977,7 @@ function renderStats() {
   const fMonth = document.getElementById('filterMonth').value;
   const fSearch = document.getElementById('filterSearch').value.trim();
   const active = !!(fType || fMonth || fSearch);
-  const totalIn = filtered.filter(t => t.type === 'ingreso').reduce((s,t) => s + Number(t.amount), 0);
+  const totalIn = filtered.filter(t => t.type === 'ingreso').reduce((s,t) => s + moneyAmount(t), 0);
   const totalOut = filtered.filter(t => t.type === 'gasto').reduce((s,t) => s + Number(t.amount), 0);
   const cashOut = filtered.filter(t => t.type === 'gasto' && !t.hist).reduce((s,t) => s + Number(t.amount), 0);
   const invValue0 = lots.reduce((s,l) => s + (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) + (Number(l.shipCost) || 0), 0);
@@ -988,7 +988,7 @@ function renderStats() {
   const now = new Date();
   const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const monthKey = fMonth || ym;
-  const monthIn = filtered.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + Number(t.amount), 0);
+  const monthIn = filtered.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + moneyAmount(t), 0);
   const monthOut = filtered.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(monthKey)).reduce((s,t) => s + Number(t.amount), 0);
   const cash = openBalance + (totalIn - cashOut);
   const invValue = invValue0;
@@ -1124,7 +1124,17 @@ function movementRowsHTML(sorted) {
     const item = getItemInLot(t.lotId, t.itemId);
     const prod = item ? item.name : '';
     const lotRef = t.type === 'gasto' && t.lotId ? (getLot(t.lotId) || {}).name || '' : '';
-    const prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
+    let prodCell = t.pedido ? `<span class="badge badge-pedido">Pedido</span>` : (t.type === 'ingreso' && prod ? `<span class="badge badge-lote">${escapeHtml(prod)}</span>` : (lotRef ? `<span class="badge badge-lote">${escapeHtml('Lote: ' + lotRef)}</span>` : '—'));
+    if (t.type === 'ingreso' && t.preventaId != null && t.moneyOnly) {
+      prodCell = '<span class="badge badge-warn">Pago preventa</span>';
+    }
+    let montoCell = `<td data-label="Monto" class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>`;
+    if (t.type === 'ingreso' && t.saleRow) {
+      const paidLine = moneyAmount(t);
+      const diffCents = Math.round((Number(t.amount) - paidLine) * 100);
+      const pendHint = diffCents > 0.5 ? `<div class="form-hint" style="margin-top:2px;">Cobrado ${formatMoney(paidLine)} de este producto · Falta ${formatMoney(diffCents)}</div>` : (paidLine > 0 ? '<div class="form-hint" style="margin-top:2px;">Paga completo este producto</div>' : '<div class="form-hint" style="margin-top:2px;">Aún no cobrado</div>');
+      montoCell = `<td data-label="Monto" class="amount-in">+ ${formatMoney(t.amount)}${pendHint}</td>`;
+    }
     return `<tr>
       <td data-label="Fecha">${dLabel}</td>
       <td data-label="Tipo"><span class="badge ${t.type === 'ingreso' ? 'badge-ingreso' : 'badge-gasto'}">${t.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>${t.hist ? ' <span class="badge badge-hist">Histórico</span>' : ''}</td>
@@ -1132,7 +1142,7 @@ function movementRowsHTML(sorted) {
       <td data-label="Categoría">${escapeHtml(t.category || '-')}</td>
       <td data-label="Descripción">${escapeHtml(t.desc || '-')}</td>
       <td data-label="Costo" class="${t.type === 'ingreso' && t.cost ? 'amount-out' : ''}">${t.type === 'ingreso' && t.cost ? formatMoney(t.cost) : '—'}</td>
-      <td data-label="Monto" class="${t.type === 'ingreso' ? 'amount-in' : 'amount-out'}">${t.type === 'ingreso' ? '+' : '-'} ${formatMoney(t.amount)}${t.discount ? '<div class="form-hint" style="margin-top:2px;">desc. ' + formatMoney(t.discount) + '</div>' : ''}</td>
+      ${montoCell}
       <td data-label="Acciones" class="admin-only"><div class="td-actions">
         <button class="btn btn-secondary btn-sm admin-only" onclick="openModal(${t.id})">Editar</button>
         <button class="btn btn-danger btn-sm admin-only" onclick="deleteTransaction(${t.id})">Eliminar</button>
@@ -1143,7 +1153,7 @@ function movementRowsHTML(sorted) {
 
 function movementSummaryHTML(filtered) {
   const totalRow = filtered.reduce((acc,t) => {
-    if (t.type === 'ingreso') acc.in += Number(t.amount);
+    if (t.type === 'ingreso') acc.in += moneyAmount(t);
     else acc.out += Number(t.amount);
     return acc;
   }, {in:0, out:0});
@@ -1164,7 +1174,7 @@ function renderCharts() {
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-    const inc = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0);
+    const inc = transactions.filter(t => t.type === 'ingreso' && t.date && t.date.startsWith(ym)).reduce((s,t)=>s+moneyAmount(t),0);
     const exp = transactions.filter(t => t.type === 'gasto' && t.date && t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0);
     months.push({ label: MESES[d.getMonth()].slice(0,3), income: inc, expense: exp });
   }
@@ -1461,8 +1471,15 @@ function toggleCostField() {
   if (isIncome) updateGainHint();
 }
 
+function moneyAmount(t) {
+  if (t && t.type === 'ingreso' && t.preventaId != null) {
+    if (t.saleRow) return Number(t.saleCollected) || 0;
+  }
+  return Number(t.amount) || 0;
+}
+
 function collectedFinancial(id) {
-  return transactions.filter(t => t.preventaId === Number(id)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  return transactions.filter(t => t.preventaId === Number(id)).reduce((s, t) => s + moneyAmount(t), 0);
 }
 
 function prevFaltaCobrar(p) {
@@ -1486,13 +1503,15 @@ function registerPreventaPayment(p, amount, date) {
   if (collected > falta + 0.001) return { error: 'Se intenta cobrar más de lo que falta (' + formatMoney(falta) + ')' };
   const evts = [];
   let unitsOut = 0;
-  if (!p.lines.length) {
-    evts.push({ type: 'ingreso', amount: collected, cost: 0, discount: 0, lotId: null, itemId: null, qty: 0, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id });
+  const started = transactions.some(t => t.preventaId === p.id && t.type === 'ingreso');
+  if (started) {
+    evts.push({ type: 'ingreso', amount: collected, cost: 0, discount: 0, lotId: null, itemId: null, qty: 0, category: 'Preventa', desc: p.client ? ('Pago de preventa de ' + p.client) : 'Pago de preventa', date: date || todayStr(), preventaId: p.id, moneyOnly: true });
+  } else if (!p.lines.length) {
+    evts.push({ type: 'ingreso', amount: collected, cost: 0, discount: 0, lotId: null, itemId: null, qty: 0, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id, saleRow: true, saleCollected: collected });
   } else {
     const collectedCents = Math.round(collected * 100);
     let remainingCents = collectedCents;
     const evtsByLine = [];
-    const dropStock = [];
     for (let i = 0; i < p.lines.length; i++) {
       const l = p.lines[i];
       const item = getItemInLot(l.lotId, l.itemId);
@@ -1505,34 +1524,23 @@ function registerPreventaPayment(p, amount, date) {
         if (t.preventaId !== p.id) return s;
         const matches = (t.lineIdx !== undefined) ? (Number(t.lineIdx) === i) : ((t.lotId || null) === l.lotId && (t.itemId || null) === l.itemId);
         if (!matches) return s;
-        return s + Math.round((Number(t.amount) || 0) * 100);
+        return s + Math.round(moneyAmount(t) * 100);
       }, 0);
       const outstandingCents = lineTotalCents - alreadyPaidCents;
       let takeCents = 0;
       if (outstandingCents > 0) {
         takeCents = Math.min(remainingCents, outstandingCents);
         remainingCents -= takeCents;
-        if (takeCents > 0) {
-          evtsByLine[i] = { type: 'ingreso', amount: takeCents / 100, cost: (Number(item.cost) || 0) * qty, discount: 0, lotId: l.lotId, itemId: l.itemId, qty, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id, lineIdx: i };
-        }
       }
-      if (!p.depleted) {
-        unitsOut += qty;
-        if (takeCents === 0) dropStock.push({ lotId: l.lotId, itemId: l.itemId, qty });
-      }
+      evtsByLine[i] = { type: 'ingreso', amount: lineTotalCents / 100, cost: (Number(item.cost) || 0) * qty, discount: 0, lotId: l.lotId, itemId: l.itemId, qty, category: 'Preventa', desc: p.client ? ('Preventa de ' + p.client) : 'Preventa', date: date || todayStr(), preventaId: p.id, lineIdx: i, saleRow: true, saleCollected: takeCents / 100 };
+      if (!p.depleted) unitsOut += qty;
     }
     for (let lastIdx = evtsByLine.length - 1; lastIdx >= 0 && remainingCents > 0 && evtsByLine[lastIdx]; lastIdx--) {
-      evtsByLine[lastIdx].amount = Math.round((Number(evtsByLine[lastIdx].amount) * 100 + remainingCents)) / 100;
+      evtsByLine[lastIdx].saleCollected = Math.round((Number(evtsByLine[lastIdx].saleCollected) * 100 + remainingCents)) / 100;
       remainingCents = 0;
     }
     for (let i = 0; i < evtsByLine.length; i++) {
       if (evtsByLine[i]) evts.push(evtsByLine[i]);
-    }
-    if (!p.depleted) {
-      dropStock.forEach(d => {
-        const it = getItemInLot(d.lotId, d.itemId);
-        if (it) it.units = Math.max(0, (Number(it.units) || 0) - (Number(d.qty) || 0));
-      });
     }
   }
   if (!evts.length) return { error: 'La preventa no tiene productos válidos' };
@@ -1541,7 +1549,7 @@ function registerPreventaPayment(p, amount, date) {
     e.id = getNextId(transactions);
     transactions.push(e);
     if (!p.depleted) adjustStock(e, -1);
-    money += Number(e.amount) || 0;
+    money += moneyAmount(e);
   });
   p.depleted = true;
   p.p1 = Math.min(total, collectedFinancial(p.id));
@@ -3024,7 +3032,7 @@ function reportHTML(ym) {
   const tx = transactions.filter(t => t.date && t.date.startsWith(ym));
   const inc = tx.filter(t => t.type === 'ingreso');
   const exp = tx.filter(t => t.type === 'gasto');
-  const inTotal = inc.reduce((s, t) => s + Number(t.amount), 0);
+  const inTotal = inc.reduce((s, t) => s + moneyAmount(t), 0);
   const costTotal = inc.reduce((s, t) => s + (Number(t.cost) || 0), 0);
   const expTotal = exp.reduce((s, t) => s + Number(t.amount), 0);
   const gross = inTotal - costTotal;
