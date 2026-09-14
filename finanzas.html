@@ -673,7 +673,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-07-prevmvto-v35';
+const BUILD_VERSION = '2026-09-14-invfix-v36';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -1042,10 +1042,11 @@ function renderRecovery() {
     const items = l.items || [];
     const sold = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id)).reduce((s,t) => s + Number(t.amount), 0);
     const shipCost = Number(l.shipCost) || 0;
-    const initialInvest = items.reduce((a,i) => {
+    const recInsist = items.reduce((a,i) => {
       const soldQty = transactions.filter(t => t.type === 'ingreso' && Number(t.lotId) === Number(l.id) && Number(t.itemId) === Number(i.id)).reduce((s,t) => s + (Number(t.qty) || 0), 0);
       return a + (Number(i.cost) || 0) * ((Number(i.units) || 0) + soldQty);
     }, 0) + shipCost;
+    const initialInvest = (l.initialInvestment != null) ? Number(l.initialInvestment) : recInsist;
     const cost = initialInvest;
     const falta = cost - sold;
     const pct = cost > 0 ? Math.min(100, (sold / cost) * 100) : (sold > 0 ? 100 : 0);
@@ -1059,7 +1060,7 @@ function renderRecovery() {
       return a + unit * un;
     }, 0);
     const projGain = sold + remainingVal - cost;
-    return { id: l.id, name: l.name || 'Lote', cost, sold, falta, pct, recovered, remainingVal, projGain };
+    return { id: l.id, name: l.name || 'Lote', cost, sold, falta, pct, recovered, remainingVal, projGain, override: l.initialInvestment != null };
   });
   rows.sort((a,b) => (a.recovered - b.recovered) || (b.cost - a.cost));
   const totalProj = rows.reduce((s,r) => s + r.projGain, 0);
@@ -1072,7 +1073,7 @@ function renderRecovery() {
         ${rows.map(r => `
           <tr>
             <td data-label="Lote">${escapeHtml(r.name)}</td>
-            <td data-label="Inversión inicial">${formatMoney(r.cost)}</td>
+            <td data-label="Inversión inicial">${formatMoney(r.cost)} ${r.override ? '' : '<span class="form-hint" style="font-size:0.6rem;">automática</span>'} <button class="btn btn-secondary btn-sm admin-only" onclick="setLotInvestment(${r.id})" title="Fijar la inversión real que pagaste por este lote">Editar</button></td>
             <td data-label="Vendido" class="c-green">${formatMoney(r.sold)}</td>
             <td data-label="Te falta" class="${r.recovered ? 'c-green' : 'c-red'}">${r.recovered ? '✓ Recuperado' : formatMoney(Math.abs(r.falta))}</td>
             <td data-label="Ganancia est." class="${r.projGain >= 0 ? 'c-green' : 'c-red'}">${formatMoney(r.projGain)}</td>
@@ -1083,7 +1084,29 @@ function renderRecovery() {
           </tr>`).join('')}
       </tbody>
     </table>
-    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Inversión inicial = costo de <b>todas</b> las unidades del lote (las vendidas + las que quedan) + envío. Te falta = inversión inicial − vendido. Ganancia est. = vendido + (unidades restantes × precio del catálogo) − inversión inicial. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:#888;">Inversión inicial: usa el total que fijaste con el botón <b>Editar</b> (tu inversión real). Si no está fijado, calcula automáticamente costo × unidades (las vendidas + las que quedan) + envío. Te falta = inversión − vendido. Ganancia est. = vendido + (unidades restantes × precio del catálogo) − inversión. Total proyectado: <b class="${totalProj >= 0 ? 'c-green' : 'c-red'}">${formatMoney(totalProj)}</b></p>`;
+}
+
+function setLotInvestment(id) {
+  const l = getLot(id);
+  if (!l) return;
+  const cur = (l.initialInvestment != null) ? l.initialInvestment : (l.items || []).reduce((a,i) => a + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) + (Number(l.shipCost) || 0);
+  const val = prompt('Inversión real de este lote (total que pagaste, incluido envío e impuestos):', formatEditValue(cur));
+  if (val === null) return;
+  const v = parseAmount(val);
+  if (v > 0) {
+    l.initialInvestment = Math.round(v * 100) / 100;
+    saveLots();
+    render();
+    showToast('Inversión del lote fijada en ' + formatMoney(l.initialInvestment));
+  } else if (String(val).trim() === '') {
+    delete l.initialInvestment;
+    saveLots();
+    render();
+    showToast('Inversión automática restaurada');
+  } else {
+    showToast('Ingresa un monto válido', true);
+  }
 }
 
 function clearFilters() {
@@ -1911,6 +1934,22 @@ function adjustStock(t, sign) {
   }
 }
 
+function addStockForLines(lines) {
+  if (!Array.isArray(lines)) return;
+  lines.forEach(l => {
+    const it = getItemInLot(l.lotId, l.itemId);
+    if (it) it.units = Math.max(0, (Number(it.units) || 0) + (parseInt(l.qty, 10) || 0));
+  });
+}
+
+function adjustForLines(lines, sign) {
+  if (!Array.isArray(lines)) return;
+  lines.forEach(l => {
+    const it = getItemInLot(l.lotId, l.itemId);
+    if (it) it.units = Math.max(0, (Number(it.units) || 0) + sign * (parseInt(l.qty, 10) || 0));
+  });
+}
+
 function saveTransaction() {
   if (Date.now() < txSaveGuard) { showToast('Espera un segundo...', true); return; }
   txSaveGuard = Date.now() + 700;
@@ -2359,7 +2398,8 @@ function saveLot() {
     if (idx !== -1) { lots[idx] = { ...lots[idx], name, date, shipCost, items }; targetId = Number(id); }
   } else {
     targetId = getNextId(lots);
-    lots.push({ id: targetId, name, date, shipCost, items });
+    const initialInvestment = Math.round(items.reduce((s,i) => s + (Number(i.cost) || 0) * (Number(i.units) || 0), 0) * 100) / 100 + (Number(shipCost) || 0);
+    lots.push({ id: targetId, name, date, shipCost, items, initialInvestment });
   }
   saveLots();
   if (pendingGastoLotTxId) {
@@ -2724,21 +2764,44 @@ function savePreventa() {
     const data = { client, lines: prevProdLines.map(l => ({ ...l })), products, total, p1, p2, pay, status, notes, date: (id ? (preventas.find(x => x.id === Number(id)) || {}).date : '') || todayStr() };
     if (id) {
       const idx = preventas.findIndex(x => x.id === Number(id));
-      if (idx !== -1) preventas[idx] = { ...preventas[idx], ...data, id: Number(id) };
+      if (idx !== -1) {
+        const oldP = { ...preventas[idx] };
+        oldP.lines = (oldP.lines || []).map(l => ({ ...l }));
+        const prevTx = transactions.filter(t => t.preventaId === Number(id));
+        const hadStock = prevTx.length > 0;
+        if (hadStock) addStockForLines(oldP.lines);
+        if (prevTx.length) { transactions = transactions.filter(t => t.preventaId !== Number(id)); saveTx(); }
+        preventas[idx] = { ...preventas[idx], ...data, id: Number(id) };
+        savePreventas();
+        const np = preventas[idx];
+        if (p1 > 0) {
+          np.depleted = false;
+          const res = registerPreventaPayment(np, p1, data.date);
+          if (res && res.error) {
+            preventas[idx] = oldP;
+            if (hadStock) adjustForLines(oldP.lines, -1);
+            transactions = transactions.filter(t => t.preventaId !== Number(id)).concat(prevTx);
+            savePreventas(); saveTx(); saveLots();
+            render();
+            showToast(res.error, true);
+            return;
+          }
+        }
+      }
     } else {
       data.id = getNextPrevId();
       preventas.push(data);
-    }
-    savePreventas();
-    if (!id && p1 > 0) {
-      const np = preventas.find(x => x.id === Number(data.id));
-      const res = registerPreventaPayment(np, p1, data.date);
-      if (res && res.error) {
-        preventas = preventas.filter(x => x.id !== Number(data.id));
-        savePreventas();
-        render();
-        showToast(res.error, true);
-        return;
+      savePreventas();
+      if (p1 > 0) {
+        const np = preventas.find(x => x.id === Number(data.id));
+        const res = registerPreventaPayment(np, p1, data.date);
+        if (res && res.error) {
+          preventas = preventas.filter(x => x.id !== Number(data.id));
+          savePreventas();
+          render();
+          showToast(res.error, true);
+          return;
+        }
       }
     }
     render();
@@ -2751,11 +2814,19 @@ function savePreventa() {
 }
 
 function deletePreventa(id) {
-  if (!confirm('¿Eliminar esta preventa?')) return;
+  const p = preventas.find(x => x.id === Number(id));
+  if (!p) return;
+  const hadTx = transactions.some(t => t.preventaId === Number(id));
+  const msg = hadTx ? '¿Eliminar esta preventa? Se devolverán al inventario las unidades reservadas y se quitarán sus movimientos.' : '¿Eliminar esta preventa?';
+  if (!confirm(msg)) return;
+  if (hadTx) addStockForLines(p.lines);
+  transactions = transactions.filter(t => t.preventaId !== Number(id));
+  saveTx();
+  if (hadTx) saveLots();
   preventas = preventas.filter(x => x.id !== Number(id));
   savePreventas();
   render();
-  showToast('Preventa eliminada');
+  showToast('Preventa eliminada' + (hadTx ? ' · unidades devueltas al inventario' : ''));
 }
 
 function deletePrevFromModal() {
