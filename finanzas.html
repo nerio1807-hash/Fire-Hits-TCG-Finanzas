@@ -401,6 +401,14 @@ body.public .admin-only { display: none !important; }
         <input type="number" id="editGastoProdQty" min="1" step="1" value="1" oninput="updateGastoProdHint()">
         <div class="form-hint" id="gastoProdHint">Costo por unidad: $0,00</div>
       </div>
+      <div class="form-group" id="multiGastoGroup" style="display:none; margin-top:0.5rem; border:1px dashed #2a2a4a; padding:0.75rem; border-radius:10px;">
+        <label style="font-size:.72rem; color:#95d5b2; text-transform:uppercase; letter-spacing:0.05em;">Productos agregados a este lote</label>
+        <div id="multiGastoItems"></div>
+        <button type="button" class="btn btn-secondary add-item-btn" onclick="addMultiGastoRow()">+ Agregar producto</button>
+        <div style="margin-top:0.75rem; display:flex; justify-content:flex-end;">
+          <b id="multiGastoTotal" style="font-size:1.05rem; color:#95d5b2;">Total de la compra: $0,00</b>
+        </div>
+      </div>
     </div>
     <div class="form-group" id="histGastoGroup" style="display:none;">
       <label class="lot-item-row" style="cursor:pointer; padding:0; align-items:center;">
@@ -673,7 +681,7 @@ body.public .admin-only { display: none !important; }
 
 <script>
 const STORE_TX = 'firehits_finanzas';
-const BUILD_VERSION = '2026-09-14-invfix-v39';
+const BUILD_VERSION = '2026-09-14-invfix-v40';
 const STORE_LOTS = 'firehits_finanzas_lots';
 const STORE_CAT = 'firehits_finanzas_catalog';
 const STORE_CLOUD = 'firehits_finanzas_cloud';
@@ -706,6 +714,7 @@ let pendingLotFirstItem = null;
 let txSaveGuard = 0;
 let openBalance = 0;
 let multiSaleLines = [];
+let multiGastoLines = [];
 const STORE_PREV = 'firehits_preventas';
 let preventas = [];
 let prevProdLines = [];
@@ -1713,8 +1722,11 @@ function onGastoLinkChange() {
   const isEx = v === 'existing';
   const isPurchase = v === 'existing' || v === 'new';
   document.getElementById('existingLotGroup').style.display = isEx ? 'block' : 'none';
-  document.getElementById('gastoProdGroup').style.display = isPurchase ? 'block' : 'none';
+  document.getElementById('gastoProdGroup').style.display = v === 'new' ? 'block' : 'none';
+  document.getElementById('multiGastoGroup').style.display = isEx ? 'block' : 'none';
   if (isEx) fillGastoLotSelect(Number(document.getElementById('editGastoLot').value) || null);
+  if (isEx && !multiGastoLines.length) multiGastoLines.push({ name: '', qty: 1, cost: null });
+  renderMultiGastoRows();
   updateGastoProdHint();
 }
 
@@ -1730,6 +1742,53 @@ function updateGastoProdHint() {
     hint.textContent = 'Pon el monto y las unidades para calcular el costo por unidad.';
   }
   if (!hint.textContent) hint.textContent = 'Costo por unidad: $0,00';
+}
+
+function addMultiGastoRow() {
+  multiGastoLines.push({ name: '', qty: 1, cost: null });
+  renderMultiGastoRows();
+}
+
+function removeMultiGastoRow(k) {
+  multiGastoLines.splice(k, 1);
+  renderMultiGastoRows();
+}
+
+function renderMultiGastoRows() {
+  const box = document.getElementById('multiGastoItems');
+  if (!box) return;
+  if (!multiGastoLines.length) {
+    box.innerHTML = '<div class="form-hint">Sin productos todavía. Usa "+ Agregar producto" para listar lo que compraste.</div>';
+    updateMultiGastoTotal();
+    return;
+  }
+  box.innerHTML = multiGastoLines.map((ln, k) => `
+    <div class="lot-item-row" data-mg-row="${k}" style="flex-direction:column; align-items:stretch; border:1px solid #2a2a4a; padding:0.5rem; border-radius:8px; margin-bottom:0.5rem;">
+      <div style="display:flex; gap:0.5rem; align-items:center;">
+        <label style="font-size:.72rem; color:#888; flex:1.6;">Producto comprado<br><input class="mg-name" list="catNamesList" placeholder="Ej: Booster Box" value="${escapeHtml(ln.name || '')}"></label>
+        <label style="font-size:.72rem; color:#888; flex:.6;">Und<br><input class="mg-qty" type="number" min="1" step="1" value="${ln.qty || 1}" style="width:100%;"></label>
+        <label style="font-size:.72rem; color:#888; flex:.9;">Costo/und<br><input class="mg-cost" placeholder="0,00" inputmode="decimal" value="${ln.cost != null ? formatEditValue(ln.cost) : ''}" style="width:100%;"></label>
+        <button type="button" class="btn btn-danger btn-sm" onclick="removeMultiGastoRow(${k})">✕</button>
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('.lot-item-row').forEach((row, k) => {
+    row.querySelector('.mg-name').oninput = () => { if (multiGastoLines[k]) multiGastoLines[k].name = row.querySelector('.mg-name').value; };
+    row.querySelector('.mg-qty').oninput = () => { if (multiGastoLines[k]) { multiGastoLines[k].qty = parseInt(row.querySelector('.mg-qty').value) || 0; updateMultiGastoTotal(); } };
+    row.querySelector('.mg-cost').oninput = () => { if (multiGastoLines[k]) { multiGastoLines[k].cost = parseAmount(row.querySelector('.mg-cost').value); updateMultiGastoTotal(); } };
+    row.querySelector('.mg-cost').onblur = () => { row.querySelector('.mg-cost').value = formatEditValue(parseAmount(row.querySelector('.mg-cost').value) || 0); };
+  });
+  updateMultiGastoTotal();
+}
+
+function updateMultiGastoTotal() {
+  const el = document.getElementById('multiGastoTotal');
+  if (!el) return;
+  const total = multiGastoLines.reduce((s, ln) => s + (Number(ln.cost) || 0) * (parseInt(ln.qty, 10) || 0), 0);
+  el.textContent = 'Total de la compra: ' + formatMoney(total);
+  const amountEl = document.getElementById('editAmount');
+  if (amountEl && multiGastoLines.length) {
+    amountEl.value = total > 0 ? formatEditValue(total) : '';
+  }
 }
 
 function addItemToLot(lotId, name, qty, unitCost) {
@@ -1889,6 +1948,9 @@ function openModal(id = null) {
     document.getElementById('editGastoLot').value = existing.lotId || '';
     document.getElementById('editGastoProdName').value = existing.lienName || '';
     document.getElementById('editGastoProdQty').value = existing.lienQty || '1';
+    multiGastoLines = (Array.isArray(existing.lienLines) && existing.lienLines.length)
+      ? existing.lienLines.map(ln => ({ name: ln.name || '', qty: ln.qty || 1, cost: ln.unitCost != null ? ln.unitCost : null }))
+      : (existing.lienName ? [{ name: existing.lienName, qty: existing.lienQty || 1, cost: existing.lienUnitCost || null }] : []);
     document.getElementById('pedidoMode').checked = !!existing.pedido;
     document.getElementById('histGasto').checked = !!existing.hist;
   } else {
@@ -1907,6 +1969,7 @@ function openModal(id = null) {
     document.getElementById('editGastoLot').value = '';
     document.getElementById('editGastoProdName').value = '';
     document.getElementById('editGastoProdQty').value = '1';
+    multiGastoLines = [];
     document.getElementById('pedidoMode').checked = false;
     document.getElementById('histGasto').checked = false;
   }
@@ -1957,7 +2020,7 @@ function saveTransaction() {
   const pedido = type === 'ingreso' && document.getElementById('pedidoMode').checked;
   const inMonto = parseAmount(document.getElementById('editAmount').value);
   const discount = (type === 'ingreso' && !pedido) ? (parseAmount(document.getElementById('editDiscount').value) || 0) : 0;
-  const amount = type === 'ingreso' ? inMonto - discount : inMonto;
+  let amount = type === 'ingreso' ? inMonto - discount : inMonto;
   const category = document.getElementById('editCategory').value.trim() || (pedido ? 'Pedido' : '');
   const desc = document.getElementById('editDesc').value.trim();
   const date = document.getElementById('editDate').value || todayStr();
@@ -2015,32 +2078,58 @@ function saveTransaction() {
   let lienName = '';
   let lienQty = 0;
   let lienUnitCost = 0;
+  let lienLines = [];
   if (type === 'gasto') {
     const gl = document.getElementById('editGastoLink').value;
-    if (gl === 'existing' || gl === 'new') {
+    if (gl === 'existing') {
+      const glotId = Number(document.getElementById('editGastoLot').value) || null;
+      if (!glotId) { showToast('Elige el lote existente al que va la compra', true); return; }
+      lotId = glotId;
+      const src = (multiGastoLines && multiGastoLines.length)
+        ? multiGastoLines
+        : [{ name: document.getElementById('editGastoProdName').value.trim(), qty: parseInt(document.getElementById('editGastoProdQty').value) || 0, cost: null }];
+      let totalCompra = 0;
+      for (const ln of src) {
+        const nm = (ln.name || '').trim();
+        const q = parseInt(ln.qty, 10) || 0;
+        let uc = Math.round((Number(ln.cost) || 0) * 100) / 100;
+        if (!nm) { showToast('Escribe el nombre de cada producto comprado', true); return; }
+        if (q <= 0) { showToast('Pon las unidades que compraste de cada producto', true); return; }
+        if (uc <= 0) {
+          if (src.length === 1 && (parseAmount(document.getElementById('editAmount').value) || 0) > 0) {
+            uc = Math.round(parseAmount(document.getElementById('editAmount').value) / q * 100) / 100;
+          } else {
+            showToast('Pon el costo por unidad de "' + nm + '"', true); return;
+          }
+        }
+        lienLines.push({ name: nm, qty: q, unitCost: uc });
+        totalCompra += q * uc;
+      }
+      lienName = lienLines[0].name; lienQty = lienLines[0].qty; lienUnitCost = lienLines[0].unitCost;
+      if (totalCompra > 0) amount = Math.round(totalCompra * 100) / 100;
+      if (id) {
+        const origTx = transactions.find(t => t.id === Number(id));
+        if (origTx && origTx.lienName && !origTx.lienNew) {
+          const oldLines = (Array.isArray(origTx.lienLines) && origTx.lienLines.length)
+            ? origTx.lienLines
+            : [{ name: origTx.lienName, qty: origTx.lienQty, unitCost: origTx.lienUnitCost }];
+          oldLines.forEach(ln => removeItemFromLot(origTx.lotId, ln.name, ln.unitCost, ln.qty));
+        }
+      }
+      for (const ln of lienLines) {
+        if (!addItemToLot(lotId, ln.name, ln.qty, ln.unitCost)) { showToast('No se encontró el lote', true); return; }
+      }
+      syncCatalogFromLots();
+    } else if (gl === 'new') {
       lienName = document.getElementById('editGastoProdName').value.trim();
       lienQty = parseInt(document.getElementById('editGastoProdQty').value) || 0;
       if (!lienName) { showToast('Escribe el nombre del producto que compraste', true); return; }
       if (lienQty <= 0) { showToast('Pon las unidades que compraste de ese producto', true); return; }
       lienUnitCost = Math.round(amount / lienQty * 100) / 100;
-    }
-    if (gl === 'existing') {
-      const glotId = Number(document.getElementById('editGastoLot').value) || null;
-      if (!glotId) { showToast('Elige el lote existente al que va la compra', true); return; }
-      lotId = glotId;
-      if (id) {
-        const origTx = transactions.find(t => t.id === Number(id));
-        if (origTx && origTx.lienName && !origTx.lienNew) {
-          removeItemFromLot(origTx.lotId, origTx.lienName, origTx.lienUnitCost, origTx.lienQty);
-        }
-      }
-      if (!addItemToLot(lotId, lienName, lienQty, lienUnitCost)) { showToast('No se encontró el lote', true); return; }
-      syncCatalogFromLots();
-    } else if (gl === 'new') {
       linkNewLot = true;
     }
   }
-  const data = { type, amount, cost: (type === 'ingreso' && !pedido) ? cost : 0, discount, lotId, itemId, qty, category, desc, date, lienName: lienName || '', lienQty: lienQty || 0, lienUnitCost: lienUnitCost || 0, lienNew: linkNewLot ? 1 : 0 };
+  const data = { type, amount, cost: (type === 'ingreso' && !pedido) ? cost : 0, discount, lotId, itemId, qty, category, desc, date, lienName: lienName || '', lienQty: lienQty || 0, lienUnitCost: lienUnitCost || 0, lienNew: linkNewLot ? 1 : 0, lienLines };
   if (pedido) data.pedido = 1;
   if (type === 'gasto') data.hist = document.getElementById('histGasto').checked ? 1 : 0;
   if (id) {
@@ -2077,7 +2166,10 @@ function deleteTransaction(id) {
   const t = transactions.find(x => x.id === id);
   if (t) {
     if (t.type === 'gasto' && t.lienName && !t.lienNew && t.lotId) {
-      removeItemFromLot(t.lotId, t.lienName, t.lienUnitCost, t.lienQty);
+      const oldLines = (Array.isArray(t.lienLines) && t.lienLines.length)
+        ? t.lienLines
+        : [{ name: t.lienName, qty: t.lienQty, unitCost: t.lienUnitCost }];
+      oldLines.forEach(ln => removeItemFromLot(t.lotId, ln.name, ln.unitCost, ln.qty));
     } else {
       adjustStock(t, +1);
     }
